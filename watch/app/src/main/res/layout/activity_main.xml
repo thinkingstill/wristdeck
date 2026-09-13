@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 表盘实测 372×430 px / density 320 → 可用区仅 186×215 dp。
+     实测占用：状态条到 y=45，设置底边 y=410，屏高 430 → 上下各留 45 / 20 px。
+     宽度预算：0.26 + 0.33 + 0.26 再加两个 5dp 间距 ≈ 158dp ≤ 174dp。
+
+     为什么用 ImageView + 矢量图，而不是 Button + 文字符号（△ ▽ ◁ ▷）：
+     原方案实测字形相对圆心偏移各不相同 —— ◁▷ 低 4px、▽ 高 1.5px、△ 基本居中，
+     根因是不同字形走了不同字体回退，度量不一致。
+     矢量图的包围盒在 24×24 视口里严格居中，scaleType=center 不缩放，位置完全确定，与设备字体无关。 -->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:paddingStart="6dp"
+    android:paddingEnd="6dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
+
+    <View
+        android:id="@+id/statusDot"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:background="@drawable/bg_dot"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="5dp"
+        android:ellipsize="end"
+        android:singleLine="true"
+        android:text="@string/status_idle"
+        android:textColor="@color/muted"
+        android:textSize="12sp"
+        app:layout_constraintBottom_toBottomOf="@id/statusDot"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/statusDot"
+        app:layout_constraintTop_toTopOf="@id/statusDot" />
+
+    <ImageView
+        android:id="@+id/btnUp"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_wrist_btn"
+        android:clickable="true"
+        android:contentDescription="@string/key_up"
+        android:focusable="true"
+        android:scaleType="center"
+        android:src="@drawable/ic_arrow_up"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/statusText"
+        app:layout_constraintWidth_percent="0.26" />
+
+    <ImageView
+        android:id="@+id/btnToggle"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="5dp"
+        android:background="@drawable/bg_wrist_btn_accent"
+        android:clickable="true"
+        android:contentDescription="@string/key_play_pause"
+        android:focusable="true"
+        android:scaleType="center"
+        android:src="@drawable/ic_play"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/btnUp"
+        app:layout_constraintWidth_percent="0.33" />
+
+    <ImageView
+        android:id="@+id/btnLeft"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginEnd="5dp"
+        android:background="@drawable/bg_wrist_btn"
+        android:clickable="true"
+        android:contentDescription="@string/key_left"
+        android:focusable="true"
+        android:scaleType="center"
+        android:src="@drawable/ic_arrow_left"
+        app:layout_constraintBottom_toBottomOf="@id/btnToggle"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintEnd_toStartOf="@id/btnToggle"
+        app:layout_constraintTop_toTopOf="@id/btnToggle"
+        app:layout_constraintWidth_percent="0.26" />
+
+    <ImageView
+        android:id="@+id/btnRight"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginStart="5dp"
+        android:background="@drawable/bg_wrist_btn"
+        android:clickable="true"
+        android:contentDescription="@string/key_right"
+        android:focusable="true"
+        android:scaleType="center"
+        android:src="@drawable/ic_arrow_right"
+        app:layout_constraintBottom_toBottomOf="@id/btnToggle"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintStart_toEndOf="@id/btnToggle"
+        app:layout_constraintTop_toTopOf="@id/btnToggle"
+        app:layout_constraintWidth_percent="0.26" />
+
+    <ImageView
+        android:id="@+id/btnDown"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_marginTop="5dp"
+        android:background="@drawable/bg_wrist_btn"
+        android:clickable="true"
+        android:contentDescription="@string/key_down"
+        android:focusable="true"
+        android:scaleType="center"
+        android:src="@drawable/ic_arrow_down"
+        app:layout_constraintDimensionRatio="1:1"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/btnToggle"
+        app:layout_constraintWidth_percent="0.26" />
+
+    <Button
+        android:id="@+id/btnSettings"
+        style="@style/WristButton"
+        android:layout_width="0dp"
+        android:layout_height="20dp"
+        android:layout_marginTop="5dp"
+        android:text="@string/title_settings"
+        android:textSize="11sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/btnDown"
+        app:layout_constraintWidth_percent="0.42" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

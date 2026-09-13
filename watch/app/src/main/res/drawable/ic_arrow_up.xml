@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 上：空心三角。包围盒严格居中于 (12,12)，不依赖字体度量。
+     描边宽 1.8 会向两侧各扩 0.9，仍是左右/上下对称，视觉中心不变。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="14dp"
+    android:height="14dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M12,3.5 L21,20.5 L3,20.5 Z"
+        android:strokeColor="@color/text"
+        android:strokeLineJoin="round"
+        android:strokeWidth="1.8" />
+</vector>

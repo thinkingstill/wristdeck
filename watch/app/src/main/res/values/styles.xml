@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.WristDeck" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:textColorPrimary">@color/text</item>
+        <item name="android:textColorSecondary">@color/muted</item>
+        <item name="colorPrimary">@color/accent</item>
+        <item name="colorAccent">@color/accent</item>
+    </style>
+
+    <style name="WristButton" parent="Widget.MaterialComponents.Button">
+        <item name="android:textColor">@color/text</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:backgroundTint">@color/surface</item>
+        <item name="cornerRadius">999dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:stateListAnimator">@null</item>
+    </style>
+
+    <!-- WristButton.Primary 已移除：主界面改用 ImageView + 矢量图（见 activity_main.xml 顶部注释），
+         播放键的深色图标由 ic_play / ic_pause 的 fillColor=@color/on_accent 决定。 -->
+</resources>

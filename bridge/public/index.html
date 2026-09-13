@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WristDeck Bridge</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ee;
+    --muted: #8b93a7;
+    --accent: #6ea8fe;
+    --ok: #4ec97f;
+    --bad: #e2696c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 48px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 28px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .label { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+  .value { font-size: 20px; font-weight: 500; letter-spacing: .5px; }
+  .value.small { font-size: 15px; }
+  .value.muted { font-size: 15px; color: var(--muted); font-weight: 400; letter-spacing: 0; }
+  .cardhint { color: var(--muted); font-size: 11px; line-height: 1.5; margin-top: 6px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: #3a4152; }
+  h2 { font-size: 14px; font-weight: 500; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 400; }
+  td.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>WristDeck Bridge</h1>
+  <div class="sub">局域网指令中枢 · 手表 App 与浏览器扩展之间的转发层</div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="label">配对 PIN</div>
+      <div class="value" id="pin">--</div>
+      <div class="cardhint" id="pinHint"></div>
+    </div>
+    <div class="card">
+      <div class="label">局域网地址</div>
+      <div class="value small" id="lan">--</div>
+    </div>
+    <div class="card">
+      <div class="label">手表端</div>
+      <div class="value small" id="watch"><span class="dot off"></span>未连接</div>
+    </div>
+    <div class="card">
+      <div class="label">浏览器执行器</div>
+      <div class="value small" id="exec"><span class="dot off"></span>未连接</div>
+    </div>
+    <div class="card">
+      <div class="label">指令统计 成功 / 失败</div>
+      <div class="value" id="stats">0 / 0</div>
+    </div>
+    <div class="card">
+      <div class="label">指令延迟 P50 / P95 · Bridge 内部</div>
+      <div class="value" id="lat">-- / --</div>
+    </div>
+  </div>
+
+  <h2>最近指令</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>时间</th><th>来源</th><th>动作</th><th>耗时</th><th>结果</th><th>备注</th></tr></thead>
+      <tbody id="logBody"><tr><td colspan="6" style="color:var(--muted)">暂无记录</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="hint">仅在可信局域网内使用。Bridge 只处理动作名与布尔状态，不采集页面内容。<br>
+    配对 PIN 只在本机（localhost）打开本页时显示，局域网内的其它设备看不到。</div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const time = (ts) => new Date(ts).toLocaleTimeString('zh-CN', { hour12: false });
+const up = (ms) => ms < 60000 ? Math.round(ms / 1000) + 's' : Math.round(ms / 60000) + 'm';
+
+function client(el, c) {
+  if (!c) { el.innerHTML = '<span class="dot off"></span>未连接'; return; }
+  el.innerHTML = '<span class="dot on"></span>' + esc(c.dev || c.ip) + ' · ' + up(c.uptime);
+}
+
+async function refresh() {
+  try {
+    const [s, l] = await Promise.all([
+      fetch('/api/status').then((r) => r.json()),
+      fetch('/api/log').then((r) => r.json()),
+    ]);
+    $('pin').textContent = s.pin || '--';
+    $('pin').className = s.pinHidden ? 'value muted' : 'value';
+    $('pinHint').textContent = s.pinHidden
+      ? 'PIN 只在运行 Bridge 的本机可见：请用 http://localhost:' + s.port + ' 打开本页'
+      : '';
+    $('lan').textContent = 'ws://' + s.lan + ':' + s.port;
+    client($('watch'), s.watch);
+    client($('exec'), s.exec);
+    $('stats').textContent = s.stats.ok + ' / ' + s.stats.fail + (s.stats.late ? ' · 迟到 ' + s.stats.late : '');
+    $('lat').textContent = (s.latency.p50 ?? '--') + ' / ' + (s.latency.p95 ?? '--') + ' ms';
+
+    const rows = (l.log || []).slice().reverse();
+    $('logBody').innerHTML = rows.length
+      ? rows.map((r) => '<tr>' +
+          '<td class="mono">' + time(r.t) + '</td>' +
+          '<td>' + esc(r.src) + '</td>' +
+          '<td class="mono">' + esc(r.action) + '</td>' +
+          '<td class="mono">' + r.ms + 'ms</td>' +
+          '<td class="' + (r.ok ? 'ok' : 'bad') + '">' + (r.ok ? '成功' : '失败') + '</td>' +
+          '<td>' + esc(r.note) + '</td></tr>').join('')
+      : '<tr><td colspan="6" style="color:var(--muted)">暂无记录</td></tr>';
+  } catch (e) {
+    document.querySelector('.sub').textContent = 'Bridge 未运行或已断开：' + e.message;
+  }
+}
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

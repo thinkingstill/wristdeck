@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 暂停：两根竖条，整体包围盒 x 7..17 居中于 12 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="26dp"
+    android:height="26dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/on_accent"
+        android:pathData="M7,5 L10.2,5 L10.2,19 L7,19 Z" />
+    <path
+        android:fillColor="@color/on_accent"
+        android:pathData="M13.8,5 L17,5 L17,19 L13.8,19 Z" />
+</vector>

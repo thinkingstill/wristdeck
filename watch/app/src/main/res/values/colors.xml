@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF0F1115</color>
+    <color name="surface">#FF171A21</color>
+    <color name="border">#FF262B36</color>
+    <color name="text">#FFE6E8EE</color>
+    <color name="muted">#FF8B93A7</color>
+    <color name="accent">#FF6EA8FE</color>
+    <color name="accent_press">#FF4C8DF5</color>
+    <!-- 压在 accent 上的图标色。刻意取与 bg 相同的深色：对比度 7.8:1（原 @color/text 只有 2.0:1），
+         视觉上等于在蓝色圆盘上"挖"出图标，与整体深色底一致。 -->
+    <color name="on_accent">#FF0F1115</color>
+    <color name="ok">#FF4EC97F</color>
+    <color name="warn">#FFE2A33F</color>
+    <color name="bad">#FFE2696C</color>
+    <color name="idle">#FF3A4152</color>
+</resources>

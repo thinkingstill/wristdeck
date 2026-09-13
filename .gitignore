@@ -1,0 +1,51 @@
+# ============================================================
+#  WristDeck .gitignore
+#  目标：仓库里只留源码与文档，机器相关 / 个人环境 / 构建产物一律不进版本库。
+# ============================================================
+
+# ---------- 构建产物 ----------
+build/
+watch/app/build/
+watch/build/
+*.apk
+*.aab
+*.ap_
+.gradle/
+watch/.gradle/
+.cxx/
+
+# ---------- 本机配置与签名（含绝对路径 / 私钥，绝不能提交）----------
+# Android 的 local.properties 里是本机 SDK 绝对路径，换机器就失效，且会暴露用户名。
+local.properties
+watch/local.properties
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+keystore.properties
+signing.properties
+
+# ---------- Node ----------
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---------- 运行期产物 ----------
+*.log
+bridge.log
+
+# ---------- 编辑器 / 系统 ----------
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ---------- Agent 工作目录 ----------
+# .workbuddy/memory/ 是本地工作记忆与日志，含个人环境信息（Wi-Fi SSID/BSSID、
+# 内网 IP、手表 adb 序列号、配对 PIN、内网拓扑），不适合进公开仓库；
+# 但同一目录下的回归测试是可复用的工程资产，用例外单独放行。
+.workbuddy/*
+!.workbuddy/tests/

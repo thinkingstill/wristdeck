@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "WristDeck Receiver",
+  "version": "0.1.5",
+  "description": "接收手表端指令，向任意网页转发方向键，并控制页面内的 HTML5 视频播放",
+  "permissions": ["storage", "alarms", "tabs", "scripting"],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*",
+    "ws://127.0.0.1:8787/*"
+  ],
+  "background": { "service_worker": "sw.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "WristDeck Receiver"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

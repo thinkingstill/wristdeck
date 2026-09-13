@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #262b36;
+    --text: #e6e8ee;
+    --muted: #8b93a7;
+    --accent: #6ea8fe;
+    --ok: #4ec97f;
+    --bad: #e2696c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    width: 320px; margin: 0; padding: 16px;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.55 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  h1 { font-size: 14px; font-weight: 500; margin: 0 0 14px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; }
+  .row + .row { border-top: 1px solid var(--border); }
+  .k { color: var(--muted); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: #3a4152; }
+  button {
+    width: 100%; margin-top: 10px; padding: 8px 10px;
+    background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  .log { margin-top: 12px; max-height: 150px; overflow: auto; }
+  .log .item { padding: 5px 0; border-top: 1px solid var(--border); font-size: 12px; }
+  .log .item:first-child { border-top: none; }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  .empty { color: var(--muted); font-size: 12px; padding: 8px 0; }
+</style>
+</head>
+<body>
+  <h1>WristDeck Receiver</h1>
+
+  <div class="row"><span class="k">Bridge</span><span id="conn"><span class="dot off"></span>未连接</span></div>
+  <div class="row"><span class="k">目标标签</span><span id="tab">未锁定 · 当前激活</span></div>
+  <div class="row"><span class="k">投递目标</span><span id="rule">--</span></div>
+
+  <button id="lockBtn">锁定当前标签页</button>
+  <button id="reconnectBtn">重新连接 Bridge</button>
+
+  <div class="log" id="log"><div class="empty">暂无执行记录</div></div>
+
+<script src="popup.js"></script>
+</body>
+</html>

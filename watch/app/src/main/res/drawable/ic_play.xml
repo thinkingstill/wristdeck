@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放：实心三角，压在 accent 圆底上，用 on_accent 深色（对比度 7.8:1）。
+     包围盒 x 7..20 中心 13.5，相对圆心右移 1.5 —— 跟随 Material 的视觉惯例：
+     三角形视觉重心偏左，几何居中会显得"往左掉"，右移一点才是看起来正中的。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="26dp"
+    android:height="26dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="@color/on_accent"
+        android:pathData="M7,4.5 L20,12 L7,19.5 Z" />
+</vector>

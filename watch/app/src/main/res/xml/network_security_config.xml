@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bridge 是本机局域网内的 Node 服务，只提供 ws://（明文 WebSocket），全链路没有 TLS。
+     Android 9（API 28）起默认禁止明文流量，而本项目 targetSdk = 30，
+     不放开就会在建立连接前直接抛：
+         CLEARTEXT communication to <ip> not permitted by network security policy
+     表现是"怎么都连不上"，且报错是英文堆栈片段。
+
+     为什么必须放 base-config 而不能只写 domain：
+     目标 IP 由用户在设置页手填（Home / 办公室可能是任意网段），无法逐条枚举；
+     而 network-security-config 的 domain 不支持 CIDR 网段（只接受主机名或字面 IP）。
+
+     代价：该 App 在局域网内的流量不加密。鉴权仍靠 hello 报文里的 PIN，
+     连续 5 次错误锁 60s（技术文档 §10）。若日后 Bridge 支持 TLS（wss://），
+     应把这里改回 cleartextTrafficPermitted="false"。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

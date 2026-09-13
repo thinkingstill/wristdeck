@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WristDeck</string>
+    <string name="title_settings">设置</string>
+
+    <string name="status_idle">未连接</string>
+    <string name="status_connecting">连接中</string>
+    <string name="status_ready">已连接</string>
+    <string name="status_denied">PIN 错误</string>
+    <string name="status_exec_offline">浏览器未就绪</string>
+    <string name="status_unconfirmed">未确认（可能已执行）</string>
+    <string name="status_busy">点太快了，稍等</string>
+
+    <!-- 无障碍标签：方向键与播放键显示的是几何图形，TalkBack 需要文字描述 -->
+    <string name="key_up">上</string>
+    <string name="key_down">下</string>
+    <string name="key_left">左</string>
+    <string name="key_right">右</string>
+    <string name="key_play_pause">播放或暂停</string>
+
+    <string name="hint_host">PC 局域网 IP</string>
+    <string name="hint_port">端口</string>
+    <string name="hint_pin">配对 PIN</string>
+    <string name="keep_alive">后台保持连接</string>
+    <string name="save_and_connect">保存并连接</string>
+    <string name="test">测试</string>
+    <string name="saved">已保存，正在连接…</string>
+    <string name="need_host">请先填写 PC 的 IP 地址</string>
+</resources>

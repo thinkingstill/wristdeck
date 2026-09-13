@@ -1,0 +1,17 @@
+{
+  "name": "wristdeck-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "WristDeck 局域网指令中枢：连接手表 App 与浏览器扩展",
+  "scripts": {
+    "start": "node server.js",
+    "sim": "node scripts/sim.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,184 @@
+# WristDeck 腕控 —— 快速上手
+
+用 OPPO Watch 3（OWW212 / Android 11）远程控制 PC 浏览器：控制页面里的 HTML5 视频播放/暂停，以及转发上/下/左/右四个方向键。
+
+方向键是**通用能力，任意网页可用**：视频站里翻视频 / 快进退，普通网页里滚动。抖音只是最好用的场景之一（`like` / `fullscreen` 这类站点快捷键仍只在抖音域生效）。
+
+链路：**手表 App → 局域网 WebSocket → PC Bridge → 浏览器扩展 → 当前网页**
+
+```
+bridge/                  PC 端指令中枢（Node.js，唯一依赖 ws）
+extension/               浏览器扩展（Chrome / Edge，MV3，免构建）
+watch/                   手表端 App（Kotlin + Gradle）
+.workbuddy/tests/        回归测试（Node 原生脚本，无需装依赖）
+产品设计文档.md / 技术架构文档.md / README.md
+```
+
+### 环境要求
+
+| 组件 | 要求 |
+|---|---|
+| Bridge | Node.js **≥ 18**（`server.js` 用了 ESM + 顶层 `await`）。`npm install` 只装一个依赖 `ws` |
+| 扩展 | Chrome / Edge **≥ 116**。低于此版本缺少"WebSocket 活动可延长 Service Worker 生命周期"的行为，SW 会被回收导致连接反复重建 |
+| 手表 | OPPO Watch 3（OWW212）/ ColorOS Watch 5.0 / Android 11。构建需要 Android Studio 自带的 JDK 与 Android SDK；构建前请**自己新建** `watch/local.properties` 并写一行 `sdk.dir=<你的 Android SDK 路径>`（该文件已列入 `.gitignore`，不会上传） |
+
+> 仓库里**不含任何凭据**。配对 PIN 由 Bridge 首次启动时随机生成，保存在 `~/.wristbridge/config.json`（在仓库之外）；`watch/local.properties`、构建产物、以及含本机网络信息的 `.workbuddy/memory/` 都已排除。
+
+---
+
+## 1. 启动 PC Bridge
+
+```bash
+cd bridge
+npm install
+npm start
+```
+
+终端会打印：
+
+```
+状态页      http://localhost:8787
+局域网地址  ws://192.168.x.x:8787/ws
+配对 PIN    317209      ← 示意值。真实 PIN 由首次启动随机生成，以你终端上打印的为准
+```
+
+打开 `http://localhost:8787` 可以看到 PIN、已连接客户端和实时指令日志。
+
+**指令流水也会实时打在终端上**，不用另开浏览器看状态页：
+
+```
+00:07:20  手表  hello  0ms  √ test-watch
+00:07:20  扩展  hello  0ms  √ test-exec
+00:07:20  手表  right  0ms  √ sent
+00:07:20  扩展  right  1ms  × no_change (video=0 scroll=0 blocked=0 host=doc)
+```
+
+- 每行是 `时间 / 来源 / 动作 / 耗时 / 结果 / 备注`。`来源` 是**事件由哪一端发出**，不是"在哪按的"：`手表` = 手表发来的指令与握手、断连，`扩展` = 执行结果与扩展侧事件。所以**一次正常按键是两行**：先是 `手表 … √ sent`（Bridge 收下），紧跟 `扩展 … 结果`。失败时 `扩展` 那行还会带上失败现场（见第 5 节 `no_change`）。
+- 输出到文件时自动去色：`npm start > bridge.log 2>&1` 得到纯文本，方便 grep。
+- 嫌吵可以关掉控制台输出（`node server.js --quiet` 或 `WD_QUIET=1 npm start`）；关掉后 `http://localhost:8787` 的日志与 `/api/log` 照旧。
+
+> PIN 只在本机（`localhost`）打开状态页时显示。用局域网 IP 打开同一页面看不到 PIN —— 这是有意设计，否则同网段的其它设备一访问就能拿到配对码。
+
+> macOS 首次启动可能弹窗询问是否允许 node 接受传入连接，选"允许"。
+> PIN 只在首次启动时生成，之后保存在 `~/.wristbridge/config.json`。
+
+## 2. 安装浏览器扩展
+
+1. Chrome 打开 `chrome://extensions/`，右上角打开 **开发者模式**
+2. 点 **加载已解压的扩展程序**，选择本项目的 `extension/` 目录
+3. 扩展会自动连接本机 Bridge，popup 显示"已连接"
+
+> 扩展更新过（当前 **`0.1.5`**）：如果之前已经加载过，请在 `chrome://extensions/` 点一次 **重新加载**，否则仍是旧行为。
+> 注意 `0.1.4` 改的是 `content_scripts.matches` 与 `host_permissions`（注入范围从抖音扩到全部网页）；`0.1.5` 只改 `content.js` 的滚动逻辑。**两种情况下，已经打开的页面都要各自刷新一次** —— 声明式注入只对之后加载的页面生效，而且 `content.js` 里的幂等守卫（防止补注入时顶层 `const` 重声明报 `SyntaxError`）同时也会挡住"热替换"，旧逻辑会在旧页面里一直跑到你刷新为止。
+
+之后在 Chrome 打开任意网页即可：
+
+- **方向键**（△▽◁▷）在**任意网页**都可用 —— 视频站里翻视频 / 快进退，普通网页里滚动。
+- **播放 / 暂停**（中央键）控制页面里任意 HTML5 视频，不限于抖音。
+- `like` / `fullscreen` 这类抖音快捷键仍然只在抖音域生效。
+- 建议在目标页面上点一次 popup 里的"锁定当前标签页"，避免受"哪个窗口算活动窗口"影响。
+
+## 3. 安装手表 App
+
+```bash
+cd watch
+export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
+./gradlew assembleDebug
+adb -s <设备序列号> install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+打开手表上的 WristDeck → 设置，填入：
+
+- **PC 局域网 IP**：Bridge 终端打印的那个地址（不要填 127.0.0.1）
+- **端口**：8787
+- **PIN**：Bridge 终端打印的 6 位数字
+
+点"保存并连接"，状态条转绿即连通。
+
+### 手表按键（v0.2.0 起为十字方向盘）
+
+```
+        △
+   ◁    ▶    ▷
+        ▽
+```
+
+| 按键 | 转发给页面的按键 | 抖音里 | 其它网页（v0.1.5 起） |
+|---|---|---|---|
+| △ | `ArrowUp` | 上一个视频 | 向上滚动 |
+| ▽ | `ArrowDown` | 下一个视频 | 向下滚动 |
+| ◁ | `ArrowLeft` | 快退 5 秒 | 页面自己的左方向键行为 |
+| ▷ | `ArrowRight` | 快进 5 秒 | 页面自己的右方向键行为 |
+| 中央 ▶ / ❚❚ | `play` / `pause` | 播放 / 暂停 | 页面上任意 HTML5 视频的播放 / 暂停 |
+
+方向键**原样转发**给页面，由页面自己解释。手表不做语义翻译，所以换个网站打开，方向键就是那个网站里的方向键。
+
+**任意网页都支持方向键**（扩展 `0.1.5` 起真正可用）。有三点值得知道：
+
+- 页面**自己监听了键盘**（新闻站、SPA、播放器）→ 直接生效。
+- 页面**只是普通长文档**、没人管键盘 → 扩展会补一次原生滚动，让 ↓ 真的往下滚一屏。因为合成键盘事件不会被浏览器当成"真按键"，默认滚动行为不会自动发生，必须显式补。
+- 页面**滚动的不是 `<html>` 而是某个内层容器**（抖音、YouTube、大部分后台系统都这样）→ 扩展会去那个容器上滚。这类容器经常写着 `overflow:hidden`，它**照样能滚**，只是滚轮和键盘不驱动它。
+
+只有"页面自己 `preventDefault` 接管了按键、但你没看到任何变化"和"该方向确实没有滚动余量了（已到顶/到底）"这两种情况才报 `no_change`，此时 popup 里会显示失败现场（`video= scroll= blocked= host=`）。
+
+方向键**没有"乐观切换"**：按下去不会立刻变图标，要等页面回包确认（页面真的动了才算成功）。页面没响应会震一下失败提示，不会假装成功。
+
+## 4. 联调自检
+
+不需要手表也能验证 Bridge 和扩展（模拟器走**回环地址**，回环来源免 PIN，所以 `--pin` 随便填）：
+
+```bash
+cd bridge
+node scripts/sim.js --as exec                              # 另开一个终端，模拟执行器
+node scripts/sim.js --as watch --pin 000000 --cmd mixed --times 20 --interval 250
+```
+
+输出会给出成功率与端到端延迟的 P50 / P95。
+
+## 5. 回归测试
+
+踩过的两个坑都留了可复跑的测试，纯 Node、无第三方依赖：
+
+```bash
+node .workbuddy/tests/scroll-host.test.mjs    # 方向键：自建 DOM 桩里跑真实 content.js，5 个用例
+node .workbuddy/tests/bridge-log.test.mjs     # Bridge 日志：伪造 HOME + 8791 端口起真服务，10 项断言
+```
+
+两者都做了隔离（`node:vm` 沙箱 / 临时 `HOME` + 独立端口），**不会干扰你正在跑的 Bridge**，跑完自动清理。
+
+---
+
+## 常见问题
+
+| 现象 | 排查 |
+|---|---|
+| 手表一直"未连接" | **先比网段**：`ipconfig getifaddr en1`（PC）与 `adb shell ip -o addr show wlan0`（手表）前三段必须一致。手表常常连在另一个路由器/热点上（例：手表 `192.168.1.x` vs PC `192.168.2.x` → 永远连不上）。同网段后再看 PC 防火墙是否放行 8787 |
+| 手表设置页显示"未连接：PC 未监听该端口" | Bridge 没在跑，或端口不是 8787 → `cd bridge && npm start`，以终端打印的地址为准 |
+| 手表设置页显示"未连接：连接超时" | 网络能到但没服务响应：多半还是网段/防火墙问题，也可能是 Bridge 被 `Ctrl-C` 了 |
+| 手表设置页显示"未连接：明文连接被系统拦截" | `AndroidManifest.xml` 少了 `android:networkSecurityConfig`，或 `res/xml/network_security_config.xml` 被删。这是编译期问题，不是环境问题 |
+| 手表提示"PIN 错误" | 以 Bridge 终端/状态页显示的 PIN 为准，改过端口或删过配置后 PIN 会重新生成 |
+| 状态"已连接，但浏览器未就绪" | 扩展没连上：确认 Bridge 在跑，打开扩展 popup 点"重新连接" |
+| 抖音没反应 | 确认当前标签是 `douyin.com`；打开扩展 popup 看最近记录里的 `method` 与失败原因 |
+| 失败原因 `wrong_tab:<host>` | 扩展投递到了非网页标签（`chrome://`、扩展商店、空白页）——那些地方无法注入。切到普通网页再按，或在扩展 popup 里"锁定标签页" |
+| 失败原因 `unsupported_site:<host>` | 只有 `like` / `fullscreen` 这类抖音快捷键动作会报这个。方向键和播放/暂停在任意网页都可用（扩展 `0.1.4` 起） |
+| 失败原因 `no_content_script` | 内容脚本没进页面。**先刷新一下当前页面**（扩展是在页面打开之后才装的）；`0.1.3` 起扩展会自动补注入，若仍报此错说明页面正在导航中，稍等重试 |
+| 失败原因 `no_change` | 页面确实没动。三种正当原因：① 该方向已经滚到顶/到底，没有余量了；② 页面自己 `preventDefault` 接管了这个键，但你没看到变化；③ 页面把内容放在跨域 `<iframe>` 里，扩展注入不到那个子框架。popup 里的失败现场 `video= scroll= blocked= host=` 能直接分辨前两种 |
+| 方向键没反应 / 震失败 | 先确认扩展已**重新加载**（`0.1.2` 才有方向键，`0.1.3` 修补注入，`0.1.4` 起全站可用，`0.1.5` 才能滚内层容器），**并刷新目标页面**；再确认 popup 里的"投递目标"是你要控制的那个页面 |
+| 改了扩展代码后不生效 | `chrome://extensions/` 必须点**重新加载**；改的是 `content_scripts` 或权限时，**已经打开的页面还要手动刷新一次**（声明式注入只对之后加载的页面生效） |
+| 手表息屏后失效 | 设置页打开"后台保持连接"；仍失效则是系统息屏断 Wi-Fi，需把 WristDeck 加入系统电池/省电白名单，或抬腕亮屏后等自动重连 |
+| 手表提示"未确认（可能已执行）" | 执行器超过 1.5s 才回包，**不代表失败**。页面若已经响应，图标会在执行器回包后被静默纠正；频繁出现说明抖音页面较卡或电脑负载高 |
+| 手表提示"点太快了" | 服务端在途指令上限 3 条的保护（防止连点导致回包乱序），等一两百毫秒再点即可 |
+| 状态页看不到 PIN | 只能通过 `http://localhost:8787` 查看；用局域网 IP 打开时 PIN 会被隐藏 |
+
+## 安全提示
+
+**运行期**：Bridge 监听 `0.0.0.0:8787`，**仅在可信的家庭/办公局域网使用**。它只处理动作名和布尔状态，不采集页面内容、Cookie 或 URL。链路是明文 `ws://`（没有 TLS），局域网内的流量不加密 —— 鉴权只靠 `hello` 报文里的 6 位 PIN。本机回环（127.0.0.1）来源免 PIN，局域网来源必须校验 PIN，连续 5 次错误锁定 60 秒；PIN 只在 `http://localhost:8787` 的状态页显示，用局域网 IP 打开同一页面看不到。
+
+**仓库**：不含任何凭据 —— 无 keystore / `.env` / token，PIN 是运行期随机生成并存放在 `~/.wristbridge/config.json`（在仓库之外）。`watch/local.properties`（本机 SDK 绝对路径）、构建产物、以及含本机网络信息的 `.workbuddy/memory/` 都已在 `.gitignore` 中排除。
+
+**准备公开之前**跑一遍自检：
+
+```bash
+git status --short                                                              # 确认没有意外文件混进来
+git ls-files | grep -iE 'local\.properties|\.keystore|\.jks|\.env$|\.apk$|\.log$'  # 应当没有输出
+```
