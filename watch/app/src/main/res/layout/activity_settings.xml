@@ -91,6 +91,23 @@
             android:textColor="@color/text"
             android:textSize="12sp" />
 
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/switchGesture"
+            android:layout_width="match_parent"
+            android:layout_height="34dp"
+            android:layout_marginTop="2dp"
+            android:text="@string/gesture_on"
+            android:textColor="@color/text"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/gesture_hint"
+            android:textColor="@color/muted"
+            android:textSize="10sp" />
+
         <Button
             android:id="@+id/btnSave"
             style="@style/WristButton"

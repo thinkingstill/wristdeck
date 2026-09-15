@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import io.wristdeck.R
+import io.wristdeck.gesture.GestureController
 import io.wristdeck.net.BridgeClient
 import io.wristdeck.net.BridgeHolder
 import io.wristdeck.util.Prefs
@@ -26,6 +27,9 @@ class BridgeService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification())
         acquireLocks()
         BridgeHolder.get(this).start()
+        // 手势跟着连接服务走：这个 Service 已经是常驻前台服务，
+        // 再单开一个组件只会多一份保活负担，也更容易被厂商省电策略掐掉。
+        if (Prefs.gestureOn(this)) GestureController.start(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -37,6 +41,7 @@ class BridgeService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        GestureController.stop()
         releaseLocks()
         super.onDestroy()
     }

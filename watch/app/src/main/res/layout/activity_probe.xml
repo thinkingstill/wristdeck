@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 探针页：372×430 px / density 320 → 可用区仅 186×215 dp。
+     纵向预算：上内边距 6 + 文本 6 行 ×≈17 + 间距 5 + 按钮 20 + 下内边距 6 ≈ 139dp < 215dp，安全。
+     文本用等宽字体，数字刷新时不会左右抖动。 -->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg"
+    android:paddingStart="6dp"
+    android:paddingEnd="6dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
+
+    <TextView
+        android:id="@+id/probeText"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:fontFamily="monospace"
+        android:scrollbars="vertical"
+        android:text="@string/probe_starting"
+        android:textColor="@color/text"
+        android:textSize="11sp"
+        app:layout_constraintBottom_toTopOf="@id/btnRow"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!-- 两个按钮等宽平铺：左侧切模式（原始 / 识别），右侧停止。 -->
+    <LinearLayout
+        android:id="@+id/btnRow"
+        android:layout_width="0dp"
+        android:layout_height="20dp"
+        android:orientation="horizontal"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintWidth_percent="0.86">
+
+        <Button
+            android:id="@+id/btnMode"
+            style="@style/WristButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:text="@string/probe_mode_raw"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/btnStop"
+            style="@style/WristButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:text="@string/probe_stop"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

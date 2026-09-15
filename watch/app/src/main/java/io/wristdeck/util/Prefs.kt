@@ -9,6 +9,7 @@ object Prefs {
     private const val K_PORT = "port"
     private const val K_PIN = "pin"
     private const val K_KEEP = "keep_alive"
+    private const val K_GESTURE = "gesture_on"
 
     fun load(ctx: Context): Config {
         val sp = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -20,8 +21,23 @@ object Prefs {
         )
     }
 
+    /**
+     * 手势开关。默认开。
+     *
+     * 刻意**不放进 [Config]**：Config 是"连哪台 PC"的连接参数，会被设置页的
+     * `save()` 整体覆盖；把手势开关混进去，改一次 IP 就会顺带把它重置。
+     * 它是独立的一把开关，读写也独立。
+     */
+    fun gestureOn(ctx: Context): Boolean = sp(ctx).getBoolean(K_GESTURE, true)
+
+    fun setGestureOn(ctx: Context, on: Boolean) {
+        sp(ctx).edit().putBoolean(K_GESTURE, on).apply()
+    }
+
+    private fun sp(ctx: Context) = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
     fun save(ctx: Context, cfg: Config) {
-        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        sp(ctx)
             .edit()
             .putString(K_HOST, cfg.host.trim())
             .putInt(K_PORT, cfg.port)

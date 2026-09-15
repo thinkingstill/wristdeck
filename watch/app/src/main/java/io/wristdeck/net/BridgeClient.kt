@@ -45,6 +45,19 @@ class BridgeClient(private var config: Config) {
     var execOnline: Boolean = false
         private set
 
+    /**
+     * 浏览器最近一次回传的**真实播放状态**（ack / cmd_late 里的 `state.playing`）。
+     * null = 未知，会随每次断开连接一起清回 null。
+     *
+     * 为什么需要它：所有"翻表盘"类动作本质是**相对动作**（toggle），而相对动作
+     * 一旦超时重试就会把状态翻回去。主页按钮早就按这个思路改成发幂等的 play/pause 了，
+     * 手势这一路必须拿到同一个真相源，否则两处会各自按自己的猜测发指令。
+     * 断线时清空是刻意的：重连后 welcome 不带播放状态，留着旧值就是凭猜。
+     */
+    @Volatile
+    var playing: Boolean? = null
+        private set
+
     var callback: Callback? = null
 
     private val main = Handler(Looper.getMainLooper())
@@ -110,6 +123,7 @@ class BridgeClient(private var config: Config) {
         main.removeCallbacksAndMessages(null)
         socket?.close(1000, "bye")
         socket = null
+        playing = null
         postState(State.DISCONNECTED, null)
     }
 
@@ -167,6 +181,9 @@ class BridgeClient(private var config: Config) {
         val permanent = detail != null && PERMANENT_DENY.contains(detail)
         if (!permanent && pendingReconnect) return
         socket = null
+        // 连接没了，播放状态也就无从得知了。留着旧值会让下一次翻表盘按过期状态发
+        // play/pause（发反了就是"按了没反应"），退化成 toggle 反而更安全。
+        playing = null
         postState(if (permanent) State.DENIED else State.DISCONNECTED, detail)
         if (permanent) return
         pendingReconnect = true
@@ -199,6 +216,9 @@ class BridgeClient(private var config: Config) {
 
             is Protocol.In.Ack -> {
                 val action = pending.remove(msg.id)?.action.orEmpty()
+                // 播放状态只在服务端给了的时候才更新：方向键的 ack 里没有 state，
+                // 用 optBoolean 的默认值去覆盖会把已知状态抹成 false。
+                msg.playing?.let { playing = it }
                 main.post {
                     callback?.onAck(
                         Ack(msg.id, action, msg.ok, msg.playing, msg.reason, msg.e2e)
@@ -211,7 +231,10 @@ class BridgeClient(private var config: Config) {
                 postState(state, if (msg.online) null else "exec_offline")
             }
 
-            is Protocol.In.CmdLate -> main.post { callback?.onCmdLate(msg.ok, msg.playing) }
+            is Protocol.In.CmdLate -> {
+                msg.playing?.let { playing = it }
+                main.post { callback?.onCmdLate(msg.ok, msg.playing) }
+            }
 
             Protocol.In.Ping -> socket?.send(Protocol.pong())
             Protocol.In.Unknown -> Unit

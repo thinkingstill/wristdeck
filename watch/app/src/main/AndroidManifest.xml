@@ -38,6 +38,18 @@
             android:name=".svc.BridgeService"
             android:enabled="true"
             android:exported="false" />
+
+        <!-- 阶段 3 前置探针：exported 只是为了能用 adb am start 直接驱动，正式功能里不需要。 -->
+        <activity
+            android:name=".ui.ProbeActivity"
+            android:exported="true"
+            android:label="@string/title_probe"
+            android:screenOrientation="portrait" />
+
+        <service
+            android:name=".svc.ProbeService"
+            android:enabled="true"
+            android:exported="false" />
     </application>
 
 </manifest>

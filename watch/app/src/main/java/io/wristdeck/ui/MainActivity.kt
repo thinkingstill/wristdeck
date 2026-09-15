@@ -14,6 +14,7 @@ import io.wristdeck.net.BridgeHolder
 import io.wristdeck.net.Protocol
 import io.wristdeck.svc.BridgeService
 import io.wristdeck.util.Feedback
+import io.wristdeck.util.Prefs
 
 class MainActivity : AppCompatActivity() {
 
@@ -131,7 +132,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         val color = ContextCompat.getColor(this, pair.second)
-        statusText.setText(pair.first)
+        /*
+         * 手势关掉时在状态条尾部缀一个短标记。
+         *
+         * 只报"异常态"（关了），正常开着就不加字 —— 主页纵向余量只剩 20px（372×430 的表），
+         * 为它单开一行会把底部的设置按钮挤出去（这个坑踩过）。而"手势开着"本来就是默认预期，
+         * 用户需要主动察觉的是"我把它关了，怎么没反应"。
+         * 开关本体放在设置页（那里是 ScrollView，加行没有版面风险）。
+         */
+        val suffix = if (Prefs.gestureOn(this)) "" else getString(R.string.gesture_off_suffix)
+        statusText.text = getString(pair.first) + suffix
         statusText.setTextColor(color)
         statusDot.background.mutate().setTint(color)
     }

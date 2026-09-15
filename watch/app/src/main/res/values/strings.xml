@@ -22,8 +22,21 @@
     <string name="hint_port">端口</string>
     <string name="hint_pin">配对 PIN</string>
     <string name="keep_alive">后台保持连接</string>
+    <string name="gesture_on">手腕手势</string>
+    <string name="gesture_hint">屏幕亮着时有效，灭屏后再留 5 秒；翻表盘 = 播放/暂停</string>
+    <string name="gesture_off_suffix"> · 手势关</string>
     <string name="save_and_connect">保存并连接</string>
     <string name="test">测试</string>
     <string name="saved">已保存，正在连接…</string>
     <string name="need_host">请先填写 PC 的 IP 地址</string>
+    <string name="gesture_enabled">手势已开启</string>
+    <string name="gesture_disabled">手势已关闭</string>
+
+    <!-- 阶段 3 前置探针（临时页面，仅用于实测 IMU 投递能力） -->
+    <string name="title_probe">手势探针</string>
+    <string name="probe_stop">停止</string>
+    <string name="probe_starting">启动中…</string>
+    <!-- 模式键显示的是"当前模式"，按下去切到另一种 -->
+    <string name="probe_mode_raw">原始</string>
+    <string name="probe_mode_detect">识别</string>
 </resources>

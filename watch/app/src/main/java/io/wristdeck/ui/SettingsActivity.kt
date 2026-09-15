@@ -7,6 +7,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.google.android.material.switchmaterial.SwitchMaterial
 import io.wristdeck.R
+import io.wristdeck.gesture.GestureController
 import io.wristdeck.model.Config
 import io.wristdeck.net.BridgeClient
 import io.wristdeck.net.BridgeHolder
@@ -20,6 +21,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var editPort: EditText
     private lateinit var editPin: EditText
     private lateinit var switchKeepAlive: SwitchMaterial
+    private lateinit var switchGesture: SwitchMaterial
     private lateinit var textResult: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,6 +32,7 @@ class SettingsActivity : AppCompatActivity() {
         editPort = findViewById(R.id.editPort)
         editPin = findViewById(R.id.editPin)
         switchKeepAlive = findViewById(R.id.switchKeepAlive)
+        switchGesture = findViewById(R.id.switchGesture)
         textResult = findViewById(R.id.textResult)
 
         val cfg = Prefs.load(this)
@@ -37,6 +40,27 @@ class SettingsActivity : AppCompatActivity() {
         editPort.setText(cfg.port.toString())
         editPin.setText(cfg.pin)
         switchKeepAlive.isChecked = cfg.keepAlive
+        switchGesture.isChecked = Prefs.gestureOn(this)
+
+        /*
+         * 手势开关**即时生效**，不走"保存"按钮。
+         *
+         * 理由：这是个"现在就要它生效/现在就要它闭嘴"的开关（比如发现误触想立刻关掉），
+         * 而保存按钮的语义是"改连接参数并重连"—— 把它卷进去，用户关个手势会顺带断一次连接。
+         * 传感器是独占资源，所以开关同时负责启停采样，不只是记一个标志位。
+         */
+        switchGesture.setOnCheckedChangeListener { _, checked ->
+            Prefs.setGestureOn(this, checked)
+            if (checked) {
+                GestureController.start(this)
+                // 服务没起来的话，连通知栏的前台服务也一起补上（正常由主页负责启动）。
+                BridgeService.start(this)
+                textResult.setText(R.string.gesture_enabled)
+            } else {
+                GestureController.stop()
+                textResult.setText(R.string.gesture_disabled)
+            }
+        }
 
         findViewById<Button>(R.id.btnSave).setOnClickListener { save() }
         findViewById<Button>(R.id.btnTest).setOnClickListener { test() }
