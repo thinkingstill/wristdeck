@@ -1,20 +1,28 @@
 package io.wristdeck.net
 
+import android.content.Context
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import io.wristdeck.model.Config
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.Response
-import okhttp3.WebSocket
-import okhttp3.WebSocketListener
+import io.wristdeck.model.Link
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
-class BridgeClient(private var config: Config) {
+/**
+ * 与 PC 的会话客户端。
+ *
+ * 职责边界（M1 抽出 [Transport] 之后）：这里只管**协议解析 + 状态机 + 重连策略**，
+ * 字节怎么出去完全交给 Transport。所以退避表、世代号护栏、pending 超时清理、
+ * `playing` 真相源这些踩过血案换来的逻辑，换传输时一条都不用重写。
+ *
+ * M2 起支持两条链路（[Link.BLE] / [Link.WIFI]）：传输实现在构造时按 `config.link` 选定，
+ * 这里除了多一个 [appContext]（BLE 需要它拿 `BluetoothManager`）之外，其余一行没动。
+ */
+class BridgeClient(
+    private val appContext: Context,
+    private var config: Config,
+) : Transport.Sink {
 
     private class Pending(val action: String, val at: Long)
 
@@ -65,6 +73,20 @@ class BridgeClient(private var config: Config) {
     private val pending = ConcurrentHashMap<String, Pending>()
     private val backoff = longArrayOf(1_000L, 2_000L, 4_000L, 8_000L, 15_000L, 30_000L, 60_000L)
 
+    /**
+     * 传输实现，按 `config.link` 选定。
+     *
+     * 是 `var` 而不是 `val`：设置页里可以把"蓝牙/Wi-Fi"整个换掉，换链路等于换一条通道，
+     * 必须显式停掉旧的（见 [updateConfig]）。`WsTransport(this)` / `BleTransport(ctx, this)`
+     * 构造期间都不会回调，所以这里传出 `this` 是安全的。
+     */
+    private var transport: Transport = newTransport(config.link)
+
+    private fun newTransport(link: Link): Transport = when (link) {
+        Link.WIFI -> WsTransport(this)
+        Link.BLE -> BleTransport(appContext, this)
+    }
+
     /** 重连任务全局只保留一份：排程前先撤销旧的，杜绝定时器叠加后并发发起连接。 */
     private val reconnectTask = Runnable {
         pendingReconnect = false
@@ -78,31 +100,19 @@ class BridgeClient(private var config: Config) {
     /** `denied` 给出的原因，交给随后的 onClosed 消费，保证一次拒绝只触发一次重连。 */
     private var denyReason: String? = null
 
-    /**
-     * 每次 connect() 自增，回调里先比对世代号。
-     *
-     * 为什么必须有它：被顶替或被 cancel 的旧 socket 仍会回调 onFailure（典型是
-     * "sent ping but didn't receive pong"），若不加甄别就又排一次重连，
-     * 新旧连接互相顶替会让连接数指数级发散 —— 实测 Bridge 侧一晚上收到 6719 个会话。
-     */
-    @Volatile
-    private var generation = 0
-
-    @Volatile
-    private var socket: WebSocket? = null
-
-    private val http = OkHttpClient.Builder()
-        .pingInterval(15, TimeUnit.SECONDS)
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS)
-        .build()
-
     fun updateConfig(cfg: Config) {
         val changed = cfg.host != config.host || cfg.port != config.port || cfg.pin != config.pin
+        val linkChanged = cfg.link != config.link
+        if (linkChanged) {
+            // 换传输 = 换一整条链路：旧实现必须显式拆掉，否则 BLE 广播和 WS socket
+            // 会同时挂在进程里，还各自往上抛状态（"同时开两条就是自己顶掉自己"）。
+            transport.stop()
+            transport = newTransport(cfg.link)
+        }
         config = cfg
-        // 改了 IP / 端口 / PIN 就立刻重来一轮，别让用户干等 60s 的退避。
+        // 改了 IP / 端口 / PIN / 连接方式就立刻重来一轮，别让用户干等 60s 的退避。
         // 尤其是 bad_pin 停在 DENIED 时，这里是唯一的恢复路径。
-        if (changed && !stopped) {
+        if ((changed || linkChanged) && !stopped) {
             main.post {
                 attempt = 0
                 main.removeCallbacks(reconnectTask)
@@ -121,20 +131,18 @@ class BridgeClient(private var config: Config) {
     fun stop() {
         stopped = true
         main.removeCallbacksAndMessages(null)
-        socket?.close(1000, "bye")
-        socket = null
+        transport.stop()
         playing = null
         postState(State.DISCONNECTED, null)
     }
 
     fun sendAction(action: String): Boolean {
-        val s = socket ?: return false
         if (state != State.READY) return false
         val now = System.currentTimeMillis()
         prunePending(now)
         val id = "w${seq.incrementAndGet()}"
         pending[id] = Pending(action, now)
-        return s.send(Protocol.cmd(id, action, now))
+        return transport.send(Protocol.cmd(id, action, now))
     }
 
     /** 超时/重连后残留的 id 关联不再有用，过期即清，避免 map 无限增长。 */
@@ -147,23 +155,20 @@ class BridgeClient(private var config: Config) {
 
     private fun connect() {
         if (stopped) return
-        if (config.host.isBlank()) {
+        // "目标地址是否有效"只有 Wi-Fi 才需要判：BLE 由对方扫描+连接决定，手表这边没有地址可填。
+        // 这个检查刻意留在这里而不是下沉给 WsTransport —— 它要表达的是"别重连了，
+        // 等用户去设置页填 IP"，而 Transport 的 onClosed 通道语义是"失败，请按退避重试"，
+        // 走那条路会变成每 60s 空转一次。
+        if (config.link == Link.WIFI && config.host.isBlank()) {
             postState(State.DISCONNECTED, NetError.describe("no_host"))
             return
         }
-        // 同一时刻只允许一个在途连接：撤掉待执行的重连，并废弃上一个 socket。
-        // 用 cancel() 而不是 close()：close() 会触发 onClosed 再排一次重连（旧的双重排程 bug）。
         main.removeCallbacks(reconnectTask)
         pendingReconnect = false
-        val prev = socket
-        socket = null
-        prev?.cancel()
         denyReason = null
-        generation += 1
-        val gen = generation
         postState(State.CONNECTING, null)
-        val url = "ws://${config.host}:${config.port}/ws?role=watch"
-        socket = http.newWebSocket(Request.Builder().url(url).build(), Listener(gen))
+        transport.updateTarget(config.host, config.port)
+        transport.start()
     }
 
     /**
@@ -180,7 +185,6 @@ class BridgeClient(private var config: Config) {
         if (stopped) return
         val permanent = detail != null && PERMANENT_DENY.contains(detail)
         if (!permanent && pendingReconnect) return
-        socket = null
         // 连接没了，播放状态也就无从得知了。留着旧值会让下一次翻表盘按过期状态发
         // play/pause（发反了就是"按了没反应"），退化成 toggle 反而更安全。
         playing = null
@@ -208,10 +212,10 @@ class BridgeClient(private var config: Config) {
             }
 
             is Protocol.In.Denied -> {
-                // 只记下原因并关连接，重连统一交给随后的 onClosed / onFailure 走，
+                // 只记下原因并关连接，重连统一交给随后的 onClosed 走，
                 // 否则 Denied 分支与回调各排一次重连 —— 就是风暴的起点。
                 denyReason = msg.reason
-                socket?.close(1000, "denied")
+                transport.stop()
             }
 
             is Protocol.In.Ack -> {
@@ -236,50 +240,33 @@ class BridgeClient(private var config: Config) {
                 main.post { callback?.onCmdLate(msg.ok, msg.playing) }
             }
 
-            Protocol.In.Ping -> socket?.send(Protocol.pong())
+            Protocol.In.Ping -> transport.send(Protocol.pong())
             Protocol.In.Unknown -> Unit
         }
     }
 
-    /** 每个连接一份，携带发起时的世代号；过期连接的回调直接丢弃。 */
-    private inner class Listener(private val gen: Int) : WebSocketListener() {
+    // ---------- Transport.Sink ----------
 
-        private fun stale() = gen != generation
+    override fun onOpen() {
+        // 刻意**不**在这里把 attempt 归零：TCP + 握手成功不等于会话可用，
+        // 服务端可能立刻回 replaced / bad_pin。在这里清零会让退避永远停在 1s，
+        // 变成每秒一次的连接风暴。真正的"连上了"以收到 welcome 为准。
+        transport.send(Protocol.hello(Build.MODEL, config.pin))
+    }
 
-        override fun onOpen(webSocket: WebSocket, response: Response) {
-            if (stale()) return
-            // 刻意**不**在这里把 attempt 归零：TCP + 握手成功不等于会话可用，
-            // 服务端可能立刻回 replaced / bad_pin。在这里清零会让退避永远停在 1s，
-            // 变成每秒一次的连接风暴。真正的"连上了"以收到 welcome 为准。
-            webSocket.send(Protocol.hello(Build.MODEL, config.pin))
-        }
+    override fun onMessage(text: String) {
+        handle(text)
+    }
 
-        override fun onMessage(webSocket: WebSocket, text: String) {
-            if (stale()) return
-            handle(text)
-        }
-
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (stale()) return
-            // 原始 message 只进日志（含 cleartext 拦截、ECONNREFUSED 等英文片段），
-            // 给 UI 的 detail 一律先翻译成人话；认不出的异常 detail 为 null，只显示"未连接"。
-            Log.w(TAG, "连接失败: ${t.message}", t)
-            val reason = denyReason ?: NetError.describe(t.message)
-            denyReason = null
-            scheduleReconnect(reason)
-        }
-
-        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (stale()) return
-            Log.i(TAG, "连接关闭 code=$code reason=$reason")
-            val r = denyReason ?: NetError.describe(reason)
-            denyReason = null
-            scheduleReconnect(r)
-        }
+    override fun onClosed(rawReason: String?) {
+        // 给 UI 的 detail 一律先翻译成人话；认不出的异常 detail 为 null，只显示"未连接"。
+        // 服务端下发的 denied.reason 优先（它比异常 message 精确得多）。
+        val reason = denyReason ?: NetError.describe(rawReason)
+        denyReason = null
+        scheduleReconnect(reason)
     }
 
     private companion object {
-        const val TAG = "WristDeck"
         const val PENDING_TTL_MS = 30_000L
 
         /** 这些拒绝原因靠重试无法恢复，必须用户去设置页改 PIN，所以不自动重连。 */

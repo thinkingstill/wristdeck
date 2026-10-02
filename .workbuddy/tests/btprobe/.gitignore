@@ -1,0 +1,3 @@
+# 编译产物：MacBleScan.app 由 ble_scan.swift 编译而来，可随时重建，不进仓库。
+# 扫描逻辑本身是 ble_scan.swift / scan_ble.py，那两个才要提交。
+*.app/

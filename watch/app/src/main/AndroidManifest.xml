@@ -8,8 +8,19 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 
+    <!--
+      蓝牙（BLE 外设模式）：广播 + GATT Server 只需要这两个级别为 normal 的权限，
+      targetSdk 30 下装即得，**不需要运行时申请、也不需要 ACCESS_FINE_LOCATION**
+      （定位权限是"手表做 Central 去扫描"才要的，本方案反过来做 Peripheral，已实测不需要）。
+      不加 maxSdkVersion：将来若升 targetSdk，它们会自动退化为无需申请的历史权限，
+      而 API 31+ 的 BLUETOOTH_ADVERTISE/CONNECT 到那时才需要补。
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+
     <uses-feature android:name="android.hardware.type.watch" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
     <application
         android:allowBackup="true"

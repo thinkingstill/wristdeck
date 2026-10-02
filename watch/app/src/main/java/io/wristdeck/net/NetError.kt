@@ -35,6 +35,18 @@ object NetError {
 
             m.contains("no_host") -> "未填写 IP"
 
+            /* ---- BLE（BleTransport 抛出的 token）----
+             * BLE 的"失败"多数不是网络错，而是链路状态变了，所以措辞按"怎么办"来写，
+             * 而不是照抄异常名 —— 手表屏幕小，用户需要的是下一步动作。 */
+            m.contains("ble_disconnected") -> "蓝牙已断开，正在重连"
+            m.contains("ble_stopped") -> "蓝牙已停止"
+            m.contains("ble_bt_off") -> "手表蓝牙没开"
+            m.contains("ble_no_adapter") -> "取不到蓝牙适配器"
+            m.contains("ble_no_advertiser") -> "本机不支持蓝牙广播"
+            m.contains("ble_unsupported") -> "本机不支持低功耗蓝牙"
+            m.contains("ble_gatt_failed") -> "蓝牙服务建立失败"
+            m.contains("ble_adv_failed") -> "蓝牙广播启动失败"
+
             else -> null
         }
     }
