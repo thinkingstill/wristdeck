@@ -43,14 +43,23 @@ watch/                   手表端 App（Kotlin + Gradle；腕部手势在 watch
 
 ---
 
-## 1. 启动 Mac 端
+## 1. 启动电脑端（Bridge + 网关）
 
-Mac 上要跑的东西取决于你用哪条链路：**Bridge 两条链路都要**，**蓝牙网关只有蓝牙模式要**。
+电脑上要跑两样东西：**Bridge（两条链路都要）** 和 **蓝牙网关（只有蓝牙模式要）**。网关是**按平台各写一份**的专属件 —— 它要直接调系统蓝牙栈，每个平台都躲不掉：
+
+| 平台 | 网关实现 | 形态 | 怎么起 |
+|---|---|---|---|
+| **macOS** | `gateway/` — Swift + CoreBluetooth | 打包成 `WristDeckLink.app`（不占 Dock） | §1.2 |
+| **Windows** | `gateway-win/` — Python + bleak | 托盘常驻，**顺带托管 Bridge 子进程** | §1.3 |
+
+两份网关是**同一套语义的两个实现**：都不解释协议、只搬字节（`hello` / `cmd` / `ack` 一个都不认识），共用同一套 service UUID、MTU 527、两块表互斥逻辑与记忆文件（`~/.wristbridge/`）。所以**换平台时，手表 App、Bridge、浏览器扩展一行都不用改**。
 
 | 你的情况 | 要做的事 |
 |---|---|
-| 蓝牙模式（默认，推荐） | 1.1 + 1.2，两个都起 |
-| Wi-Fi 直连 | 只做 1.1 |
+| 蓝牙模式（默认，推荐） | §1.1 + 你平台对应的网关（§1.2 或 §1.3） |
+| Wi-Fi 直连 | 只做 §1.1 |
+
+> ⚠️ **同一块表同一时刻只能被一台网关连着** —— 两台机器的网关**不能并存**。原因与取舍见 §1.4。
 
 ### 1.1 Bridge（必须）
 
@@ -85,9 +94,12 @@ npm start
 > PIN 只在本机（`localhost`）打开状态页时显示。用局域网 IP 打开同一页面看不到 PIN —— 这是有意设计，否则同网段的其它设备一访问就能拿到配对码。
 
 > macOS 首次启动可能弹窗询问是否允许 node 接受传入连接，选"允许"。
-> PIN 只在首次启动时生成，之后保存在 `~/.wristbridge/config.json`。
+> Windows 首次启动可能弹"Windows 安全中心 → 防火墙"提示，勾选**专用网络**允许即可（回环访问本不受影响，放行是为了 Wi-Fi 直连模式能从局域网连入）。
+> PIN 只在首次启动时生成，之后保存在 `~/.wristbridge/config.json`（Windows 上是 `%USERPROFILE%\.wristbridge\config.json`）。
 
-### 1.2 蓝牙网关（只有蓝牙模式需要）
+### 1.2 macOS 蓝牙网关（只有蓝牙模式需要）
+
+Windows 版见 §1.3。
 
 ```bash
 cd gateway
@@ -132,22 +144,68 @@ open -n WristDeckLink.app
   - `device`：**想钉死一块就手填**（值就是手表的 `Build.MODEL`，如 `OWW212` 方表 / `OPWW234` 圆表）。填了它之后记忆不再生效，永远优先它。
 - 更省事的办法：**不用那块表时，在它上面点「断开」** —— 总闸一关，它的蓝牙广播也就停了，网关自然只看到一块表。
 
-### 1.3 Windows 端（Bridge + 网关都在 Windows 上）
+### 1.3 Windows 蓝牙网关（Bridge + 网关都在 Windows 上）
 
-Windows 可以把 **Bridge 与蓝牙网关放在同一台机器**，浏览器扩展也是本机 —— 全链路都在回环与本机
-蓝牙里，**不用填 IP、不用 PIN、不用改防火墙**。
+Windows 把 **Bridge 与蓝牙网关放在同一台机器**，浏览器扩展也是本机 —— 全链路都在回环与本机蓝牙里，**不用填 IP、不用 PIN、不用改防火墙**。托盘程序**一个进程同时托管 Bridge 子进程和 BLE 网关**。
+
+**一次性安装**（建 `gateway-win\.venv` / 装 Python 依赖 / 给 `bridge/` 跑 `npm install` / 写开机自启项）：
 
 ```powershell
-cd wristdeck
-powershell -ExecutionPolicy Bypass -File gateway-win\install.ps1   # 一次性：建 venv / 装依赖 / npm install / 写自启项
-gateway-win\start.ps1                                               # 启动（装完也会随开机自起）
+cd <仓库目录>
+powershell -ExecutionPolicy Bypass -File gateway-win\install.ps1
 ```
 
-装完会有一个**托盘图标**：一个进程同时托管 Bridge 子进程和 BLE 网关，菜单里能打开状态页、看日志、
-重启链路、开关开机自启。详细说明、实测数据与排障见 **`gateway-win/README.md`**。
+可选参数：`-NoAutostart` 不写自启项、`-NoVenv` 用系统 Python、`-NoBridgeDeps` 跳过 `npm install`、`-PythonExe <路径>` 指定解释器、`-Firewall` 额外放行 8787。
 
-> ⚠️ **同一块表只能有一个网关连着**。如果 Mac 上的 `WristDeckLink` 还在跑，先 `pkill -f WristDeckLink`。
+**启动 / 停止**：
+
+```powershell
+gateway-win\start.ps1              # 静默启动（pythonw，无控制台窗口）
+gateway-win\start.ps1 -Console     # 需要看实时日志时带控制台前台启动
+gateway-win\start.ps1 -Foreground  # 调试用：前台运行、Ctrl-C 退出
+gateway-win\stop.ps1               # 按命令行精确匹配 pythonw / node 进程，逐个结束
+```
+
+**托盘菜单**（右键图标）：
+
+- 顶部两行**实时状态**：BLE 链路 + Bridge/WS（颜色随状态变化）
+- 打开状态页（`http://localhost:8787`）/ 打开日志目录
+- 重启 BLE 链路 / 重启 Bridge
+- 开机自启（勾选开关，写当前用户 `HKCU\...\Run`，**不需要管理员权限**）
+- 退出
+
+**几个关键点**：
+
+- **不用填 IP / PIN / 同网段**：网关自己连本机 `ws://127.0.0.1:8787`，回环来源免 PIN。
+- **单实例**：托盘用具名互斥体 `Global\WristDeckWindowsTray` 防重复启动，重复点只会激活已有实例。
+- **日志**：`%USERPROFILE%\.wristbridge\logs\gateway.log`（2MB 轮转），托盘的"打开日志目录"直达。
+- **配置与记忆**：`%USERPROFILE%\.wristbridge\gateway-win.json`（配置）、`...\wristdecklink.json`（两块表记忆）—— **与 macOS 版同一套文件、同一套语义**。
+- **环境**：Python 3.10+；依赖 `bleak / websockets / pystray / pillow` 装在 `gateway-win\.venv` 里，不污染系统 Python。
+
+**实测（2026-10-02，Windows 11 24H2）**：扫到手表 → 连上 → 订阅约 3s，**MTU 527**；上行 hello 被 Bridge 认出（`OWW212`）；下行 welcome / ping 写进手表；**180s 长连接 11/11 全中**、**重连压测 5/5**；真表按钮 → 真 Chrome 扩展的 `cmd → ack` 闭环 **13 条 1:1 全回应**。完整数据与排障见 **`gateway-win/README.md`**。
+
+> ⚠️ Mac 上的 `WristDeckLink` 若还在跑，先停掉它（见 §1.4）。
 > ⚠️ 手表侧要选「**用蓝牙连接**」，否则它会走 Wi-Fi 直连 —— Bridge 的 `state.watch` 是单实例，两条链路会互相顶替（`code 4006`）。
+
+### 1.4 两台网关不能同时开（macOS + Windows）
+
+一块表**同时只能被一台网关连**。这不是配置问题，是架构决定的：
+
+- 手表的 BLE 传输层只保留**一个** `central` 设备，后连上的中心会**覆盖**它，通知会被投递到错误的一方 ⇒ **上行串流**（2026-10-02 实测撞到：Windows 侧一个"只连接、不发包"的静默窗口里，收到本属于 Mac 网关的 `pong`）。
+- Bridge 的 `state.watch` 也是**单实例**：后到的会话把先到的顶掉（`denied reason=replaced code=4006`）。
+- 而且被顶替的网关**在 BLE 层不会主动放手**，两个中心并存就是串流。
+
+⇒ 结论：**换机器就"停一台、起一台"**。
+
+```bash
+pkill -f WristDeckLink          # 停 macOS 网关
+```
+
+```powershell
+gateway-win\stop.ps1            # 停 Windows 网关
+```
+
+（为什么轮不到"在表上选"、网关侧将来若要支持双网关需要改什么，见 `BLE链路方案设计.md` §7.1。）
 
 ## 2. 安装浏览器扩展
 
@@ -176,8 +234,8 @@ adb -s <设备序列号> install -r app/build/outputs/apk/debug/app-debug.apk
 
 打开手表上的 WristDeck。
 
-**蓝牙模式（默认）**：**什么都不用填**。确认 Mac 上的 Bridge 与网关都在跑，状态条转绿即连通
-（首次可能要多等几秒 —— 手表在广播、Mac 在扫描）。若一直"未连接"，先看网关日志里有没有扫到这快表。
+**蓝牙模式（默认）**：**什么都不用填**。确认电脑上的 Bridge 与网关都在跑（macOS 见 §1.2、Windows 见 §1.3），状态条转绿即连通
+（首次可能要多等几秒 —— 手表在广播、网关在扫描）。若一直"未连接"，先看网关日志里有没有扫到这块表。
 
 **Wi-Fi 直连**：进设置页关掉「用蓝牙连接」，然后填：
 
@@ -338,10 +396,12 @@ adb -s <设备序列号> logcat -s WristDeck:I          # 手势日志前缀 GES
 
 | 现象 | 排查 |
 |---|---|
-| **双击网关 App 能起、命令行跑就闪退** | 必须经 `open -n WristDeckLink.app` 启动（见 1.2）。直接跑二进制会因为 macOS 隐私授权（TCC）拿不到启动机会而 `SIGABRT(exit=134)` |
-| **蓝牙模式：手表一直"未连接"** | 按顺序查：① 网关 App 在跑吗（`pkill` 列表 / 日志在动）；② **首次的蓝牙授权弹窗允许了吗**（没允许时网关侧一声不响）；③ Mac 的蓝牙开关是开的吗（**网关会监听蓝牙开关变化并自动重扫**，但如果是被系统关掉，需要你打开）；④ 看网关日志里有没有扫到这快表。**蓝牙模式不需要同网段、不需要 PIN** |
-| **蓝牙模式：两块表都在附近，手里这块却一直"连接中"** | 网关只维护一条连接，会**优先**连 `~/.wristbridge/wristdecklink.json` 里记住的那块。① 想钉死一块：手填 `{"device":"OPWW234"}`（值就是手表的 `Build.MODEL`）后重启网关；② **更省事：在不用那块表上点「断开」**（总闸一关，广播也停）；③ 首次"记住"错的那块会自纠 —— 最多连试 8 次，**期望那块在场约 2–5 秒收敛、不在附近要约 24 秒**才回落 |
-| **网关日志有"已连接"、但没有"特征已就绪"** | 卡在**服务发现**这一步（CoreBluetooth 没给回调），**不是手表的问题**。现在每个阶段都有 8 秒兜底闹钟，超时会自己打 `⚠️ <阶段>超过 8s 无进展 ⇒ 丢弃重扫` 再重连。**旧版本没有这层兜底，会永久僵死** —— 进程还活着、却既不连也不扫，只能 `pkill -f WristDeckLink` 重启 |
+| **（macOS）双击网关 App 能起、命令行跑就闪退** | 必须经 `open -n WristDeckLink.app` 启动（见 §1.2）。直接跑二进制会因为 macOS 隐私授权（TCC）拿不到启动机会而 `SIGABRT(exit=134)`。**Windows 没有这条约束**，Python 直接跑即可 |
+| **蓝牙模式：手表一直"未连接"** | 按顺序查：① 网关在跑吗（macOS 用 `pkill -f WristDeckLink` 看是否有进程；Windows 看托盘图标，别乱停）；② **macOS 首次的蓝牙授权弹窗允许了吗**（没允许时网关侧一声不响；**Windows 无此弹窗**）；③ 系统蓝牙开关是不是开着（**网关会监听蓝牙开关变化并自动重扫**）；④ 看网关日志里有没有扫到这块表；⑤ 是不是被**另一台机器**的网关占着（见 §1.4）。**蓝牙模式不需要同网段、不需要 PIN** |
+| **蓝牙模式：两块表都在附近，手里这块却一直"连接中"** | 网关只维护一条连接，会**优先**连 `~/.wristbridge/wristdecklink.json` 里记住的那块（**macOS / Windows 同一套文件**）。① 想钉死一块：手填 `{"device":"OPWW234"}`（值就是手表的 `Build.MODEL`）后重启网关；② **更省事：在不用那块表上点「断开」**（总闸一关，广播也停）；③ 首次"记住"错的那块会自纠 —— 最多连试 8 次，**期望那块在场约 2–5 秒收敛、不在附近要约 24 秒**才回落 |
+| **（macOS）网关日志有"已连接"、但没有"特征已就绪"** | 卡在**服务发现**这一步（CoreBluetooth 没给回调），**不是手表的问题**。现在每个阶段都有 8 秒兜底闹钟，超时会自己打 `⚠️ <阶段>超过 8s 无进展 ⇒ 丢弃重扫` 再重连。**旧版本没有这层兜底，会永久僵死** —— 进程还活着、却既不连也不扫，只能 `pkill -f WristDeckLink` 重启。Windows 网关每个阶段同样有超时兜底，超时后自扫 |
+| **（Windows）找不到托盘图标 / 起不来** | ① `gateway-win\start.ps1 -Console` 看报错；② 确认跑过 `gateway-win\install.ps1`、`gateway-win\.venv` 里依赖已装；③ 看 `%USERPROFILE%\.wristbridge\logs\gateway.log`；④ 单实例互斥体：已在跑时重复启动只会**激活**已有实例，不会新开一个 |
+| **两台机器都开着网关，表连上了但行为错乱（串流）** | 两块网关**不能并存**（见 §1.4）。停掉不用的那台：macOS `pkill -f WristDeckLink`、Windows `gateway-win\stop.ps1` |
 | 手表显示"已连接"但按键没反应 | 看网关日志里有没有对应的 `↓` 报文。有 `↓` 没 `↑` → 问题在 Bridge 或扩展；完全没 `↓` → 问题在手表到网关这一段（BLE） |
 | 手表一直"未连接"（Wi-Fi 模式） | **先比网段**：`ipconfig getifaddr en1`（PC）与 `adb shell ip -o addr show wlan0`（手表）前三段必须一致。手表常常连在另一个路由器/热点上（例：手表 `192.168.1.x` vs PC `192.168.2.x` → 永远连不上）。同网段后再看 PC 防火墙是否放行 8787 |
 | 手表设置页显示"未连接：PC 未监听该端口" | Bridge 没在跑，或端口不是 8787 → `cd bridge && npm start`，以终端打印的地址为准 |
