@@ -3,7 +3,7 @@
 > 配套文档：`技术架构文档.md`、`产品设计文档.md`
 > 状态：**M1–M5 已落地，端到端跑通**（BLE 已是默认链路）。本文保留原始方案 + 落地后的实际出入，
 > 第 8 节的每一步都补上了"实际怎么落地的"，第 10 节是结项结论与遗留。
-> 日期：2026-10-01（方案）；2026-10-01 结项
+> 日期：2026-10-01（方案）；2026-10-01 结项；2026-10-02 补 **Windows 侧网关**（见 §4.5）
 
 ---
 
@@ -190,6 +190,68 @@ macOS 上 CoreBluetooth 受 TCC 管控，系统读**进程所属 bundle 的 `Inf
   ② **会话重新对齐** —— Bridge 重启后 WS 是全新会话，网关补一次 `hello` 换回 `welcome`，
   手表**无须重发 `hello`** 也能回到 READY。实测印证：Bridge 重启后控制台只有 `hello √ ble-gateway`、没有手表，
   链路照样恢复。✅ 已落地。
+
+### 4.5 Windows 侧网关（`gateway-win/`，2026-10-02 落地）
+
+Mac 那份是 Swift + CoreBluetooth，**换平台就得重写**（见产品设计文档 §9.3）。Windows 版本用
+**Python + bleak** 重写 BLE 侧，并额外加一个**托盘壳**把 Node Bridge 一起托管 —— 用户侧只有一个
+东西要装、要起、要退。
+
+#### 4.5.1 最省事的一条：macOS 那条硬约束在 Windows 上不存在
+
+CoreBluetooth 必须跑在带 `NSBluetoothAlwaysUsageDescription` 的 `.app` 里、且经 `open`/LaunchServices
+启动，否则一律 `SIGABRT`（§4.1）。**Windows 的蓝牙没有这类授权模型** —— 不弹框、不需要清单文件、
+不需要签名，`python win_gateway.py` 直接就能扫能连。这一条把"部署"从"要打包"降到"要装依赖"。
+
+#### 4.5.2 逐条对齐
+
+| Swift 做的事 | Windows 等价 |
+|---|---|
+| `CBCentralManager.scanForPeripherals(withServices:)` | `BleakScanner.discover()` + 按 service UUID 过滤 |
+| `connect` → `discoverServices` → `discoverCharacteristics` | `client.services`（bleak 连接后自动发现） |
+| `setNotifyValue(true)` | `client.start_notify()` |
+| `writeValue(_:for:type:.withResponse)` | `write_gatt_char(..., response=False)` |
+| `URLSessionWebSocketTask` | `websockets`（`ping_interval=None`，与 Mac 一样不发协议级 ping） |
+| 每阶段 8s 链路兜底超时 | `asyncio.wait_for(8s)` |
+| 上行暂存 32 条 / 5s 保鲜 | 同 |
+| 下行未就绪即丢（刻意不对称） | 同 |
+| WS 退避 1/2/4/8/15/30 | 同 |
+| 网关自发 `hello`（`dev=ble-gateway`） | 同，且在 `ws_open` 之后、补发暂存之前 |
+| 双表仲裁（`hello.dev` 比对记忆机型，8 次后放弃） | 同 |
+| 机型偏好落 `~/.wristbridge/wristdecklink.json` | **同一个文件**（换机器不用重配） |
+| 日志 2MB 轮转 | 同 |
+
+**唯一刻意的差异**：写用 **write-without-response**。Mac 上 `writeValue` 走 `.withResponse`；
+Windows 侧实测手表日志是 `need_rsp=0`，单帧 115B 直发成功且 `pong` 正常返回，省一个往返。
+写入仍用 `asyncio.Lock` 串行化。
+
+#### 4.5.3 Windows 特有的三件事
+
+| 能力 | 做法 |
+|---|---|
+| 托盘常驻 | `pystray` + `Pillow`（图标运行时绘制，仓库里不放二进制资源）；颜色=链路状态，菜单含打开状态页/日志/重启链路/重启 Bridge/开机自启/退出 |
+| 单实例互斥 | 具名 mutex `Global\WristDeckWindowsTray`。**这条不是洁癖**：实测两台主机同时以 `watch` 身份连 Bridge，`pong` 会串流到错误的一方 |
+| 一键安装 + 自启 | `install.ps1`（建 venv、装依赖、`npm install`、写 HKCU Run，**全程免管理员**）；`start.ps1` 用 `pythonw` 静默启动 |
+
+#### 4.5.4 实测（2026-10-02）
+
+主机 Windows 11 24H2 / build 26100.9445，适配器 Intel AX201（`USB\VID_8087&PID_07DC`），
+Python 3.13.12 + bleak，手表 OWW212（Android 11）。
+
+| 项 | 结果 |
+|---|---|
+| 扫描→连接→订阅 | 约 **3s** |
+| MTU | **527**（单包上限 524B），与手表侧 `onMtuChanged mtu=527` 一致 |
+| 上行 | 网关 `↑ {"t":"hello","role":"watch","dev":"OWW212",...}` ⇒ Bridge `/api/log` 出现 `手表 hello √ OWW212` |
+| 下行 | 网关 `↓ welcome` / `↓ ping` ⇒ 手表 logcat `WristDeck: BLE ← 收到写入 65B`（welcome）、`39B`（ping） |
+| 闭环 | 手表回 `pong`，网关中继上桥；每 15s 一轮 |
+| 长连接保持 | **180s 内 11/11 轮 ping→pong 全中**，RTT 167–317ms，全程未掉线 |
+| 字节级透传 | 两端长度逐条对得上（welcome 65B / ping 39B / pong 18B）⇒ 中继确实没改内容 |
+
+**未验**：真表上按一次方向键跑出 `cmd`→`ack`（测试时手表正充电，系统 `SysUI.Charging` 窗口抢焦点，
+`adb shell input tap` 打不到 App 上）；Linux 网关未做。
+
+部署与排障见 `gateway-win/README.md`。
 
 ---
 

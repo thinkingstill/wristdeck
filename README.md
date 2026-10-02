@@ -13,16 +13,17 @@
 
 | | 蓝牙（默认，推荐） | Wi-Fi 直连 |
 |---|---|---|
-| 走什么 | 手表 BLE 外设 ↔ Mac 上的 `WristDeckLink.app` ↔ 本机 Bridge | 手表直接 WebSocket 连 PC 的 Bridge |
+| 走什么 | 手表 BLE 外设 ↔ **网关**（Mac 是 `WristDeckLink.app`，Windows 是 `gateway-win/` 托盘）↔ 本机 Bridge | 手表直接 WebSocket 连 PC 的 Bridge |
 | 要填什么 | **什么都不用填**（不用 IP、不用 PIN、不用同一网段） | PC 的局域网 IP、端口、配对 PIN |
-| 要什么权限 | 手表侧**零权限、零配对**（手表做外设，Mac 做主机） | 手表需要能上同一个局域网 |
-| 什么时候用 | 日常。Mac 上多跑一个网关 App 即可 | 想省掉网关 App、或手表离 Mac 很近时 |
+| 要什么权限 | 手表侧**零权限、零配对**（手表做外设，网关做主机） | 手表需要能上同一个局域网 |
+| 什么时候用 | 日常。多跑一个网关（Mac 上是 `.app`，Windows 上是托盘）即可 | 想省掉网关、或手表离 PC 很近时 |
 
 链路：**手表 App →（BLE 或 Wi-Fi）→ PC Bridge → 浏览器扩展 → 当前网页**（手势走同一条链路）
 
 ```
 bridge/                  PC 端指令中枢（Node.js，唯一依赖 ws）
-gateway/                 Mac 蓝牙网关（Swift，把 BLE 桥进城里的 Bridge；Wi-Fi 模式不需要它）
+gateway/                 Mac 蓝牙网关（Swift + CoreBluetooth；Wi-Fi 模式不需要它）
+gateway-win/             Windows 蓝牙网关（Python + bleak + 托盘，顺带托管 bridge；见 gateway-win/README.md）
 extension/               浏览器扩展（Chrome / Edge，MV3，免构建）
 watch/                   手表端 App（Kotlin + Gradle；腕部手势在 watch/…/gesture/，圆表版面在 watch/…/ui/DisplayGeometry.kt）
 .workbuddy/tests/        回归测试（两个 Node 脚本 + 两个 JVM 套件，都无需装依赖）
@@ -34,7 +35,7 @@ watch/                   手表端 App（Kotlin + Gradle；腕部手势在 watch
 | 组件 | 要求 |
 |---|---|
 | Bridge | Node.js **≥ 18**（`server.js` 用了 ESM + 顶层 `await`）。`npm install` 只装一个依赖 `ws` |
-| 蓝牙网关 | **仅蓝牙模式需要**。macOS + Xcode 命令行工具（要 `swiftc`）。无第三方依赖，`./build.sh` 一步出 `.app` |
+| 蓝牙网关 | **仅蓝牙模式需要**，且按平台各一份：<br>**macOS** — Xcode 命令行工具（要 `swiftc`）。无第三方依赖，`./build.sh` 一步出 `.app`<br>**Windows** — Python 3.10+。`gateway-win\install.ps1` 一步装好（含托盘、开机自启、Bridge 依赖），见 `gateway-win/README.md` |
 | 扩展 | Chrome / Edge **≥ 116**。低于此版本缺少"WebSocket 活动可延长 Service Worker 生命周期"的行为，SW 会被回收导致连接反复重建 |
 | 手表 | OPPO Watch 3（OWW212 方形 / OPWW234 圆形）/ Android 11。构建需要 Android Studio 自带的 JDK 与 Android SDK；构建前请**自己新建** `watch/local.properties` 并写一行 `sdk.dir=<你的 Android SDK 路径>`（该文件已列入 `.gitignore`，不会上传） |
 
@@ -130,6 +131,23 @@ open -n WristDeckLink.app
   - `lastDevice`：网关自己维护，不用管。
   - `device`：**想钉死一块就手填**（值就是手表的 `Build.MODEL`，如 `OWW212` 方表 / `OPWW234` 圆表）。填了它之后记忆不再生效，永远优先它。
 - 更省事的办法：**不用那块表时，在它上面点「断开」** —— 总闸一关，它的蓝牙广播也就停了，网关自然只看到一块表。
+
+### 1.3 Windows 端（Bridge + 网关都在 Windows 上）
+
+Windows 可以把 **Bridge 与蓝牙网关放在同一台机器**，浏览器扩展也是本机 —— 全链路都在回环与本机
+蓝牙里，**不用填 IP、不用 PIN、不用改防火墙**。
+
+```powershell
+cd wristdeck
+powershell -ExecutionPolicy Bypass -File gateway-win\install.ps1   # 一次性：建 venv / 装依赖 / npm install / 写自启项
+gateway-win\start.ps1                                               # 启动（装完也会随开机自起）
+```
+
+装完会有一个**托盘图标**：一个进程同时托管 Bridge 子进程和 BLE 网关，菜单里能打开状态页、看日志、
+重启链路、开关开机自启。详细说明、实测数据与排障见 **`gateway-win/README.md`**。
+
+> ⚠️ **同一块表只能有一个网关连着**。如果 Mac 上的 `WristDeckLink` 还在跑，先 `pkill -f WristDeckLink`。
+> ⚠️ 手表侧要选「**用蓝牙连接**」，否则它会走 Wi-Fi 直连 —— Bridge 的 `state.watch` 是单实例，两条链路会互相顶替（`code 4006`）。
 
 ## 2. 安装浏览器扩展
 

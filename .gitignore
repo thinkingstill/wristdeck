@@ -31,6 +31,14 @@ watch/local.properties
 keystore.properties
 signing.properties
 
+# ---------- Python（Windows 蓝牙网关 gateway-win）----------
+# 虚拟环境是机器相关的（里面写死了解释器绝对路径），且体积大 —— 由 install.ps1 现场创建。
+.venv/
+gateway-win/.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
 # ---------- Node ----------
 node_modules/
 npm-debug.log*

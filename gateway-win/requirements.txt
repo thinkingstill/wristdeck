@@ -1,0 +1,10 @@
+# WristDeck Windows 网关运行期依赖
+#
+# bleak      —— BLE Central（Windows 上走 WinRT 后端，无需额外原生模块）
+# websockets —— 连 Bridge 的 WebSocket 客户端
+# pystray    —— 托盘常驻
+# pillow     —— 托盘图标（运行时绘制，仓库里不放二进制资源）
+bleak>=0.22
+websockets>=12
+pystray>=0.19
+pillow>=10
