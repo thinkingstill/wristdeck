@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleExecutable</key>
+    <string>WristDeckLink</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.wristdeck.link</string>
+    <key>CFBundleName</key>
+    <string>WristDeckLink</string>
+    <key>CFBundleDisplayName</key>
+    <string>WristDeckLink</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+
+    <!-- 常驻后台服务，不占 Dock、不进 Cmd-Tab -->
+    <key>LSUIElement</key>
+    <true/>
+
+    <!--
+      ⚠️ 这两个键是本项目能不能用蓝牙的前提，不是"建议填写"。
+      缺 NSBluetoothAlwaysUsageDescription 时 macOS 不弹授权框、直接 SIGABRT（exit=134），
+      所以网关必须以 .app 形式存在并被 `open` 启动，让本进程成为 TCC 的责任主体。
+      改键名或删键都会让网关一启动就 abort。
+    -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>连接 WristDeck 手表，把它的手势指令转发给本机的 WristDeck Bridge。</string>
+    <key>NSBluetoothPeripheralUsageDescription</key>
+    <string>连接 WristDeck 手表，把它的手势指令转发给本机的 WristDeck Bridge。</string>
+
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
