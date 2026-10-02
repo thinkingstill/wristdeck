@@ -1,138 +1,207 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView
+<!--
+  根容器从 ScrollView 改成 LinearLayout：上面钉一条"返回"，下面才是滚动区。
+
+  为什么改：设置页原本**没有任何返回入口** —— 主题是 Theme.MaterialComponents.NoActionBar，
+  页面里也没有 Toolbar，进去之后只能靠系统返回手势（从屏幕左边缘往右划）才能出来。
+  实测用户当场卡死在这一页（"设置页面如何回到控制页面啊"）。
+
+  为什么钉在顶部而不是塞进滚动区末尾：进页面第一眼就能看见出口，不用先滚到底。
+  代价是常驻占掉 ~34dp（表格 372×430 @320dpi ≈ 186×215dp），但本页内容
+  （BLE 模式下约 284dp）本来就要滚动，这点损失换"永远有出口"是划算的。
+
+  ⚠️ 圆表（466×466）不能直接用这份版面：本页每行都是 match_parent，圆屏左右两端在
+  顶部/底部是弧 —— 实测返回按钮占 x∈[20,446]、y∈[12,68]，而 y=12 处圆的弦只有 [159,307]，
+  **按钮大部分落在圆外**。圆表由 SettingsActivity 在**第一次布局之前**给根布局加内缩
+  （见 `ui/DisplayGeometry.pageInset`：整页收进圆的**内接正方形**，视口本身就是正方形 ⇒
+  里面任何一行不管滚到哪都在圆内）。方表不加任何 padding，逐像素不变。
+
+  ⚠️ 加内缩的**时机**是关键：不能放在 `onLayout` 回调里 —— 那样 padding 会生效、子视图
+  却停在旧坐标，表现为整页被切（左文字少半个字、右开关被削、顶部「返回」消失）。
+  详见 `ui/SettingsActivity.applyRoundInset` 的注释。
+-->
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/settingsRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <Button
+        android:id="@+id/btnBack"
+        style="@style/WristButton"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="10dp">
+        android:layout_height="28dp"
+        android:layout_marginStart="10dp"
+        android:layout_marginTop="6dp"
+        android:layout_marginEnd="10dp"
+        android:text="@string/back"
+        android:textSize="12sp" />
 
-        <TextView
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/hint_host"
-            android:textColor="@color/muted"
-            android:textSize="11sp" />
+            android:orientation="vertical"
+            android:padding="10dp">
 
-        <EditText
-            android:id="@+id/editHost"
-            android:layout_width="match_parent"
-            android:layout_height="36dp"
-            android:layout_marginTop="2dp"
-            android:autofillHints="postalAddress"
-            android:background="@drawable/bg_edit"
-            android:hint="192.168.1.10"
-            android:importantForAutofill="no"
-            android:inputType="text|textNoSuggestions"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:textColor="@color/text"
-            android:textColorHint="@color/idle"
-            android:textSize="13sp" />
+            <!-- 连接方式开关。默认开（蓝牙），关掉才是 Wi-Fi 直连。 -->
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchLink"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:text="@string/link_ble"
+                android:textColor="@color/text"
+                android:textSize="12sp" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/hint_port"
-            android:textColor="@color/muted"
-            android:textSize="11sp" />
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/link_ble_hint"
+                android:textColor="@color/muted"
+                android:textSize="10sp" />
 
-        <EditText
-            android:id="@+id/editPort"
-            android:layout_width="match_parent"
-            android:layout_height="36dp"
-            android:layout_marginTop="2dp"
-            android:background="@drawable/bg_edit"
-            android:hint="8787"
-            android:importantForAutofill="no"
-            android:inputType="number"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:textColor="@color/text"
-            android:textColorHint="@color/idle"
-            android:textSize="13sp" />
+            <!--
+              Wi-Fi 参数区。BLE 模式下整块隐藏（SettingsActivity 里按 link 切 isVisible），
+              而不是逐项 disable —— 蓝牙根本用不到 IP/PIN，摆在那里只会让人以为没填对。
+            -->
+            <LinearLayout
+                android:id="@+id/groupWifi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="vertical">
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/hint_pin"
-            android:textColor="@color/muted"
-            android:textSize="11sp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="@string/hint_host"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
 
-        <EditText
-            android:id="@+id/editPin"
-            android:layout_width="match_parent"
-            android:layout_height="36dp"
-            android:layout_marginTop="2dp"
-            android:background="@drawable/bg_edit"
-            android:hint="6 位数字"
-            android:importantForAutofill="no"
-            android:inputType="number"
-            android:maxLength="6"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:textColor="@color/text"
-            android:textColorHint="@color/idle"
-            android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/editHost"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="2dp"
+                    android:autofillHints="postalAddress"
+                    android:background="@drawable/bg_edit"
+                    android:hint="192.168.1.10"
+                    android:importantForAutofill="no"
+                    android:inputType="text|textNoSuggestions"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:textColor="@color/text"
+                    android:textColorHint="@color/idle"
+                    android:textSize="13sp" />
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchKeepAlive"
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:layout_marginTop="6dp"
-            android:text="@string/keep_alive"
-            android:textColor="@color/text"
-            android:textSize="12sp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/hint_port"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
 
-        <com.google.android.material.switchmaterial.SwitchMaterial
-            android:id="@+id/switchGesture"
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:layout_marginTop="2dp"
-            android:text="@string/gesture_on"
-            android:textColor="@color/text"
-            android:textSize="12sp" />
+                <EditText
+                    android:id="@+id/editPort"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="2dp"
+                    android:background="@drawable/bg_edit"
+                    android:hint="8787"
+                    android:importantForAutofill="no"
+                    android:inputType="number"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:textColor="@color/text"
+                    android:textColorHint="@color/idle"
+                    android:textSize="13sp" />
 
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="@string/gesture_hint"
-            android:textColor="@color/muted"
-            android:textSize="10sp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/hint_pin"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
 
-        <Button
-            android:id="@+id/btnSave"
-            style="@style/WristButton"
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:layout_marginTop="6dp"
-            android:text="@string/save_and_connect"
-            android:textSize="12sp" />
+                <EditText
+                    android:id="@+id/editPin"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="2dp"
+                    android:background="@drawable/bg_edit"
+                    android:hint="6 位数字"
+                    android:importantForAutofill="no"
+                    android:inputType="number"
+                    android:maxLength="6"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:textColor="@color/text"
+                    android:textColorHint="@color/idle"
+                    android:textSize="13sp" />
 
-        <Button
-            android:id="@+id/btnTest"
-            style="@style/WristButton"
-            android:layout_width="match_parent"
-            android:layout_height="34dp"
-            android:layout_marginTop="6dp"
-            android:text="@string/test"
-            android:textSize="12sp" />
+            </LinearLayout>
 
-        <TextView
-            android:id="@+id/textResult"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="@color/muted"
-            android:textSize="11sp" />
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchKeepAlive"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginTop="6dp"
+                android:text="@string/keep_alive"
+                android:textColor="@color/text"
+                android:textSize="12sp" />
 
-    </LinearLayout>
-</ScrollView>
+            <com.google.android.material.switchmaterial.SwitchMaterial
+                android:id="@+id/switchGesture"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginTop="2dp"
+                android:text="@string/gesture_on"
+                android:textColor="@color/text"
+                android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/gesture_hint"
+                android:textColor="@color/muted"
+                android:textSize="10sp" />
+
+            <Button
+                android:id="@+id/btnSave"
+                style="@style/WristButton"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginTop="6dp"
+                android:text="@string/save_and_connect"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnTest"
+                style="@style/WristButton"
+                android:layout_width="match_parent"
+                android:layout_height="34dp"
+                android:layout_marginTop="6dp"
+                android:text="@string/test"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/textResult"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:textColor="@color/muted"
+                android:textSize="11sp" />
+
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

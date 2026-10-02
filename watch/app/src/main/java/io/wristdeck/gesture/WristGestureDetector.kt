@@ -83,7 +83,8 @@ import kotlin.math.sqrt
  *   回弹过冲的问题改由"峰值速率触发 + 停稳判定"在上游解决。
  * - 候选有 [Config.candidateTimeoutMs] 超时，干掉落一半放弃的动作。
  * - 翻转途中的方向误发由 `|φarm| ≥ faceDownDeg` 这条**前置**分支挡掉（它在 pickDirection 之前）。
- * - 识别只在"活跃窗口"内进行（[arm]/[disarm]）。
+ * - 识别受"活跃窗口"约束（[arm]/[disarm]）。但**正式路径走的是 [alwaysArmed]** ——
+ *   连上就常识别、含灭屏；活跃窗口只留给探针标定用。
  */
 class WristGestureDetector(private var cfg: Config = Config()) {
 
@@ -98,7 +99,10 @@ class WristGestureDetector(private var cfg: Config = Config()) {
         const val ACTION_RIGHT = "right"
         const val ACTION_TOGGLE = "toggle"
 
-        /** 屏幕亮时每次调用刷新窗口，窗口长度取 5s：够"点亮屏幕 → 抬腕 → 翻表盘"一气呵成。 */
+        /**
+         * 活跃窗口长度：屏幕亮时每次调用 [arm] 就刷新一次，5s 够"点亮屏幕 → 抬腕 → 翻表盘"一气呵成。
+         * ⚠️ 正式路径已不用它（改用 [alwaysArmed]，闸门挂在"连接状态"上），只有探针标定还在用。
+         */
         const val ARM_HOLD_MS = 5_000L
 
         private const val PI_F = 3.14159265f
@@ -443,11 +447,13 @@ class WristGestureDetector(private var cfg: Config = Config()) {
     }
 
     /**
-     * 打开活跃窗口。调用方在**屏幕亮着时反复调**，窗口就持续滑动；
-     * 屏幕灭后自然过期 → 日常佩戴（屏幕常灭）等于识别关闭，几乎零误触。
+     * 打开活跃窗口。调用方在**屏幕亮着时反复调**，窗口就持续滑动；屏幕灭后自然过期。
      *
      * 实现成"滑动窗口"而不是"当前屏幕亮"，是因为翻表盘那一刻屏幕可能已经灭了，
      * 若按瞬时状态判定，play/pause 会被自己掐掉。
+     *
+     * ⚠️ **正式路径已经不用它了**（改用 [alwaysArmed]，闸门挂在"连接状态"上）。
+     * 保留是因为探针页/标定还要靠它：标定时屏幕一灭就掐死自己，没法量角度。
      */
     fun arm(now: Long, holdMs: Long = ARM_HOLD_MS) {
         val next = now + holdMs
@@ -466,7 +472,23 @@ class WristGestureDetector(private var cfg: Config = Config()) {
      */
     var bypassArm = false
 
-    fun isArmed(now: Long): Boolean = bypassArm || now < armedUntil
+    /**
+     * **产品行为**：一直识别，不依赖屏幕，也不靠 [arm] 开窗。
+     *
+     * 由 [io.wristdeck.gesture.GestureController] 在启停时置位——它的语义是
+     * **"跟着连接开关走"**：连上就一直感应（含灭屏），断开就整个停掉。
+     *
+     * 为什么把闸门从"屏幕亮"挪到"连接状态"：原来的活跃窗口是**为省电**设的
+     * （见类注释里那条），不是为防误触——防误触靠的是触发判据本身
+     * （峰值角速度 + 停稳 + 幅度窗口 + 不应期）。所以"连上就常识别"在逻辑上自洽，
+     * 代价只是**耗电**（50Hz 常采）和**误触机会变多**，而后者由"断开"这个动作兜底。
+     *
+     * ⚠️ 与 [bypassArm] 的区别：那个是标定专用（探针页会置位），这个是正式路径的产品语义。
+     * 两者合在 [isArmed] 里取并集，但**默认值都是 false**，所以离线台的行为不受影响。
+     */
+    var alwaysArmed = false
+
+    fun isArmed(now: Long): Boolean = alwaysArmed || bypassArm || now < armedUntil
 
     /* ---------------- 基准的导出与注入（调试 / 离线回放） ---------------- */
 

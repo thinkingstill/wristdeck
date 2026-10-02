@@ -2,8 +2,12 @@
 <resources>
     <string name="app_name">WristDeck</string>
     <string name="title_settings">设置</string>
+    <!-- 设置页顶部的返回入口。这一页没有 Toolbar/返回键，只能靠这个按钮或系统返回手势离开。 -->
+    <string name="back">返回</string>
 
     <string name="status_idle">未连接</string>
+    <!-- 用户主动断开（主页按钮），和"未连接"（掉线/在连）是两回事，文案要分开 -->
+    <string name="status_off">已断开</string>
     <string name="status_connecting">连接中</string>
     <string name="status_ready">已连接</string>
     <string name="status_denied">PIN 错误</string>
@@ -21,14 +25,26 @@
     <string name="hint_host">PC 局域网 IP</string>
     <string name="hint_port">端口</string>
     <string name="hint_pin">配对 PIN</string>
+    <string name="link_ble">用蓝牙连接</string>
+    <string name="link_ble_hint">手表直接连 Mac，不用填 IP、不用同一网段。需要 Mac 上运行 WristDeckLink 应用。关掉则改用 Wi-Fi 直连。</string>
     <string name="keep_alive">后台保持连接</string>
     <string name="gesture_on">手腕手势</string>
-    <string name="gesture_hint">屏幕亮着时有效，灭屏后再留 5 秒；翻表盘 = 播放/暂停</string>
+    <!-- v0.5：闸门从"屏幕亮"改成"连接状态"，这句必须跟着改 —— 否则页面上还在说"灭屏后只留 5 秒"，
+         而实际行为是"连上就一直认（含熄屏）、断开才停"，用户按老文案理解会以为手势在熄屏后失效。 -->
+    <string name="gesture_hint">连接后一直有效（含熄屏），断开即停；翻表盘 = 播放/暂停</string>
     <string name="gesture_off_suffix"> · 手势关</string>
     <string name="save_and_connect">保存并连接</string>
     <string name="test">测试</string>
     <string name="saved">已保存，正在连接…</string>
+    <!-- 断开状态下点"保存并连接"：只保存，不偷偷把链路拉回来 -->
+    <string name="saved_off">已保存；当前是断开状态，回主页点「连接」</string>
+    <!-- 断开状态下点"测试" -->
+    <string name="need_link">当前已断开，请回主页点「连接」</string>
+    <!-- 主页底部的连接总闸（和"设置"并排） -->
+    <string name="link_connect">连接</string>
+    <string name="link_disconnect">断开</string>
     <string name="need_host">请先填写 PC 的 IP 地址</string>
+    <string name="waiting_gateway">正在等 Mac 连接…</string>
     <string name="gesture_enabled">手势已开启</string>
     <string name="gesture_disabled">手势已关闭</string>
 

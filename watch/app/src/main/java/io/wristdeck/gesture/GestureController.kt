@@ -1,16 +1,12 @@
 package io.wristdeck.gesture
 
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.util.Log
 import io.wristdeck.net.BridgeClient
 import io.wristdeck.net.BridgeHolder
@@ -29,11 +25,18 @@ import io.wristdeck.util.Feedback
  * 传感器在整机上是**独占资源**：同一时刻只应该有一条自己人开的采样流。
  * 做成进程单例，重复 start() 天然被 [running] 挡住，不必依赖调用方保证不重复启动。
  *
- * ## 省电：跟着屏幕走，而不是常开
- * 识别只在"屏幕亮后 [WristGestureDetector.ARM_HOLD_MS]"的滑动窗口内生效
- * （[WristGestureDetector.arm] 的语义），所以屏幕灭着的时候采样纯属浪费。
- * 屏幕灭后**不立刻**注销，留 [OFF_GRACE_MS] 宽限：翻表盘往往就发生在屏幕刚灭那一刻
- * （抬手看表 → 屏幕亮 → 手腕翻过去），立刻停采样会把最后那一下吃掉。
+ * ## 闸门：跟着"连接"走，不跟着屏幕走（2026-10-01 改）
+ * 这里原来是"屏幕亮才注册采样、灭屏留 15s 宽限"——**那是为省电设的**。
+ * 真机用下来它把功能卡死了：日常佩戴屏幕绝大多数时间是灭的 ⇒ 手势基本用不了，
+ * 必须"先抬腕亮屏、再在 5s 窗口内做动作"，用户直接反馈"熄屏后 App 像断了一样"。
+ *
+ * 现在改成：**启停只由 [io.wristdeck.svc.BridgeService] 决定**（而服务由主页的
+ * 「连接 / 断开」按钮决定）。连上就一直采样、一直识别（含灭屏）；断开就整个停掉。
+ *
+ * 这么改是自洽的——原闸门防的是**耗电**，防误触靠的是识别器自己的判据
+ * （峰值角速度 ≥60°/s + 停稳 120ms + 幅度窗口 + 800ms 不应期），跟屏幕无关。
+ * 代价要说清楚：**50Hz 常采比原来费电**；且"一直识别"意味着日常动作有了误触机会，
+ * 由"断开"这个动作兜底。
  *
  * ## 指令怎么发
  * - 四向：原样转发 `up/down/left/right`（与 [Protocol] 里的字面量一致，但本类刻意
@@ -49,14 +52,13 @@ object GestureController {
     private const val TAG = "WristDeck"
     private const val G = "GEST "
 
-    /** 50Hz。手腕姿态识别够用，不是最高速率，避免无谓功耗。 */
+    /**
+     * 50Hz。手腕姿态识别够用，不是最高速率。
+     *
+     * ⚠️ 别为了省电把它降下来：触发判据量的是**峰值角速度**（窗 70ms ≈ 3.5 帧），
+     * 10Hz 下这个窗口里只剩 0.7 帧，速率估计会直接废掉。
+     */
     private const val ACCEL_PERIOD_US = 20_000
-
-    /** 屏幕亮时每秒续一次活跃窗口就够（窗口本身有 5s）。 */
-    private const val ARM_RENEW_STEP_MS = 1_000L
-
-    /** 屏幕灭后继续采样的宽限期，见类注释。 */
-    private const val OFF_GRACE_MS = 15_000L
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -66,57 +68,25 @@ object GestureController {
     @Volatile
     private var running = false
 
-    @Volatile
-    private var screenOn = false
-
     private var registered = false
-    private var lastArmRenew = 0L
     private var sent = 0
     private var dropped = 0
 
     private var sensorManager: SensorManager? = null
-    private var powerManager: PowerManager? = null
     private var accel: Sensor? = null
 
     private val detector = WristGestureDetector()
 
-    /**
-     * 屏幕灭且宽限期已过 → 注销采样。
-     *
-     * 必须用定时任务而不是"顺手下一次采样时检查"：注销之后就再也没有采样事件了，
-     * 靠采样驱动就等于永远不会触发。
-     */
-    private val releaseWhenIdle = Runnable {
-        if (!screenOn) release()
-    }
-
-    private val screenReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> onScreenOn()
-                Intent.ACTION_SCREEN_OFF -> onScreenOff()
-            }
-        }
-    }
-
     private val listener = object : SensorEventListener {
         override fun onSensorChanged(e: SensorEvent) {
             if (e.sensor.type != Sensor.TYPE_ACCELEROMETER) return
-            val now = System.currentTimeMillis()
-            // 屏幕亮 → 持续续期活跃窗口；屏幕灭 → 不再续期，窗口 5s 后自然过期。
-            if (screenOn && now - lastArmRenew >= ARM_RENEW_STEP_MS) {
-                lastArmRenew = now
-                detector.arm(now)
-            }
-            detector.onAccel(e.values[0], e.values[1], e.values[2], now)
+            detector.onAccel(e.values[0], e.values[1], e.values[2], System.currentTimeMillis())
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
     }
 
     fun isRunning(): Boolean = running
-
-    fun isScreenOn(): Boolean = screenOn
 
     /** 启用手势。重复调用无副作用。 */
     fun start(ctx: Context) {
@@ -134,30 +104,25 @@ object GestureController {
         }
         app = c
         sensorManager = sm
-        powerManager = c.getSystemService(Context.POWER_SERVICE) as? PowerManager
         accel = a
 
-        // 正式路径必须走活跃窗口这道闸门。调试页会把 bypassArm 置 true —— 那是标定专用，
-        // 这里显式写回 false，免得被上一次调试会话的残留值带着走（单例，状态是跨界面共享的）。
+        /*
+         * 两条闸门都要显式写回：
+         * - alwaysArmed = true：正式路径的语义（连上就识别），见类注释；
+         * - bypassArm = false：那是标定专用的，必须清掉——单例的状态是跨界面共享的，
+         *   上一次调试会话留下的 true 会让"识别一直开着"这件事变得看不出来。
+         */
+        detector.alwaysArmed = true
         detector.bypassArm = false
         detector.onEvent = { e -> deliver(e) }
 
-        c.registerReceiver(
-            screenReceiver,
-            IntentFilter().apply {
-                addAction(Intent.ACTION_SCREEN_ON)
-                addAction(Intent.ACTION_SCREEN_OFF)
-            },
-        )
         running = true
-        screenOn = powerManager?.isInteractive == true
-        lastArmRenew = 0L
-        if (screenOn) acquire() else main.postDelayed(releaseWhenIdle, OFF_GRACE_MS)
+        acquire()
 
         Log.i(
             TAG,
-            "${G}手势启用 屏幕亮=$screenOn 采样=${if (registered) "已注册" else "待屏幕亮"} " +
-                "窗口=${WristGestureDetector.ARM_HOLD_MS}ms 宽限=${OFF_GRACE_MS}ms",
+            "${G}手势启用 常识别=${detector.alwaysArmed} 采样=${if (registered) "已注册" else "注册失败"} " +
+                "（不随屏幕开关，随连接启停）",
         )
     }
 
@@ -165,32 +130,16 @@ object GestureController {
     fun stop() {
         if (!running) return
         running = false
-        main.removeCallbacks(releaseWhenIdle)
+        detector.alwaysArmed = false
         release()
-        app?.let { runCatching { it.unregisterReceiver(screenReceiver) } }
         detector.onEvent = null
         Log.i(TAG, "${G}手势停用 累计发=$sent 丢弃=$dropped")
-    }
-
-    private fun onScreenOn() {
-        if (!running) return
-        screenOn = true
-        lastArmRenew = 0L
-        acquire()
-    }
-
-    private fun onScreenOff() {
-        if (!running) return
-        screenOn = false
-        main.removeCallbacks(releaseWhenIdle)
-        main.postDelayed(releaseWhenIdle, OFF_GRACE_MS)
     }
 
     private fun acquire() {
         if (registered) return
         val sm = sensorManager ?: return
         val a = accel ?: return
-        main.removeCallbacks(releaseWhenIdle)
         registered = sm.registerListener(listener, a, ACCEL_PERIOD_US)
         Log.i(TAG, "${G}采样开始 registered=$registered")
     }

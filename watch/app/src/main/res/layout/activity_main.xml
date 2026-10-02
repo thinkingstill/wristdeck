@@ -3,6 +3,14 @@
      实测占用：状态条到 y=45，设置底边 y=410，屏高 430 → 上下各留 45 / 20 px。
      宽度预算：0.26 + 0.33 + 0.26 再加两个 5dp 间距 ≈ 158dp ≤ 174dp。
 
+     ⚠️ 圆表（466×466 ≈ 233×233dp）不走这份尺寸：上面那些百分比按**屏宽**算，
+     圆表屏更宽 ⇒ 绝对值更大（播放键 0.33×221dp = 73dp vs 方表 57dp），纵向链条会被顶爆；
+     而且圆屏顶部/底部的行两端落在圆外、物理点不到。
+     圆表由 `ui/DisplayGeometry.kt` 逐行收窄后**在代码里覆写**下面这些尺寸，
+     本文件里的数值仍是方表的真值（也是圆表收窄的**基准值**）。
+     本文件里的 dp 常量（6dp padding / 8dp 点 / 5dp 间距 / 20dp 底行 / 0.26 / 0.33）
+     在 MainActivity 的 roundSpec() 里各有一份对应常量，改这里要同步改那边。
+
      为什么用 ImageView + 矢量图，而不是 Button + 文字符号（△ ▽ ◁ ▷）：
      原方案实测字形相对圆心偏移各不相同 —— ◁▷ 低 4px、▽ 高 1.5px、△ 基本居中，
      根因是不同字形走了不同字体回退，度量不一致。
@@ -10,6 +18,7 @@
 <androidx.constraintlayout.widget.ConstraintLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/mainRoot"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
@@ -126,17 +135,46 @@
         app:layout_constraintTop_toBottomOf="@id/btnToggle"
         app:layout_constraintWidth_percent="0.26" />
 
-    <Button
-        android:id="@+id/btnSettings"
-        style="@style/WristButton"
+    <!--
+      底部一行拆成两个并排按钮（连接/断开 | 设置）。
+
+      为什么要拆：主页纵向余量只剩 20px（见文件头），再往下加一整行会把「设置」挤出屏幕。
+      这一行沿用原来 btnSettings 的高度（20dp）和 marginTop（5dp），**纵向零新增**；
+      宽度取 0.84（原 btnSettings 是 0.42），两个按钮各分一半，实测够放两个字。
+      0.84 × 174dp ≈ 146dp，两半各 ≈70dp，11sp 两个汉字约 22dp —— 余量充足。
+
+      这里是**连接总闸**：断开 = 停前台服务 + 断链路 + 停手势识别（含灭屏感应）。
+    -->
+    <LinearLayout
+        android:id="@+id/rowBottom"
         android:layout_width="0dp"
         android:layout_height="20dp"
         android:layout_marginTop="5dp"
-        android:text="@string/title_settings"
-        android:textSize="11sp"
+        android:orientation="horizontal"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/btnDown"
-        app:layout_constraintWidth_percent="0.42" />
+        app:layout_constraintWidth_percent="0.84">
+
+        <Button
+            android:id="@+id/btnLink"
+            style="@style/WristButton"
+            android:layout_width="0dp"
+            android:layout_height="20dp"
+            android:layout_weight="1"
+            android:text="@string/link_disconnect"
+            android:textSize="11sp" />
+
+        <Button
+            android:id="@+id/btnSettings"
+            style="@style/WristButton"
+            android:layout_width="0dp"
+            android:layout_height="20dp"
+            android:layout_marginStart="5dp"
+            android:layout_weight="1"
+            android:text="@string/title_settings"
+            android:textSize="11sp" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
