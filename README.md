@@ -363,10 +363,38 @@ adb -s <设备序列号> logcat -s WristDeck:I          # 手势日志前缀 GES
 
 **文档里的环境值是占位符**：文档中的设备序列号写作 `<设备序列号>`、内网地址写作 `<手表IP>` / `<PC-IP>`，不写真实值——真实的那些在 `.workbuddy/memory/` 里（不进仓库）。
 
-**准备公开之前**跑一遍自检：
+**准备公开之前**跑一遍自检。四条都要跑，**第 ③④ 条尤其容易被漏** —— 它们扫的是"本机特征串"和"git 元数据"，而不是文件内容：
 
 ```bash
-git status --short                                                              # 确认没有意外文件混进来
-git ls-files | grep -iE 'local\.properties|\.keystore|\.jks|\.env$|\.apk$|\.log$'  # 应当没有输出
-git ls-files -z | xargs -0 grep -InE 'ghp_|github_pat|AKIA|BEGIN [A-Z ]*PRIVATE KEY|/Users/[a-z]+'  # 应当没有输出
+# ① 确认没有意外文件混进来
+git status --short
+git ls-files | grep -iE 'local\.properties|\.keystore|\.jks|\.env$|\.apk$|\.log$'   # 应当没有输出
+
+# ② 扫文件内容里的凭据与私人路径
+git ls-files -z | xargs -0 grep -InE \
+  'ghp_|gho_|github_pat|AKIA|BEGIN [A-Z ]*PRIVATE KEY|/Users/[a-z]+|/home/[a-z]+|C:\\\\Users\\\\'   # 应当没有输出
+
+# ③ 拿本机真实标识自查（电脑名 / 主机名 / 内网 IP / adb 序列号）
+#    ⚠️ 值在终端里现算，**不要把真实值写进任何文件**（包括本文件和你自己的笔记）。
+#    ⚠️ 空值必须剔除再拼正则，否则会拼出 "a|b||" 这种空分支，
+#       grep 直接报 empty (sub)expression 失败 —— 而失败极容易被当成"没有命中"。
+ME=$(whoami)
+CN=$(scutil --get ComputerName)
+LH=$(scutil --get LocalHostName)
+IP=$(ipconfig getifaddr en1 || ipconfig getifaddr en0)
+SN=$(adb devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1}' | paste -sd'|' -)
+PAT=$(printf '%s\n' "$ME" "$CN" "$LH" "$IP" "$SN" | awk 'NF' | paste -sd'|' -)
+echo "PAT=$PAT"
+[ -n "$PAT" ] || { echo "❌ 一个标识都没取到，别当通过"; exit 1; }
+git ls-files -z | xargs -0 grep -InE "$PAT"            # 当前版本，应当没有输出
+git grep -n -I -E "$PAT" $(git rev-list --all) -- .    # 全部历史（含已删除内容）
+
+# ④ 提交作者身份也是公开的：文件内容能干净，这一项却最常被忘掉
+git log --format='%an <%ae>' | sort -u
+```
+
+第 ④ 项的取舍：真实邮箱会**逐条**出现在公开仓库的每个 commit 页面上，而且改写历史也收不回已经公开的副本 —— 所以正确做法是一开始就别用它。改用 GitHub 的 noreply 地址（形如 `<用户ID>+<用户名>@users.noreply.github.com`，在 Settings → Emails 可查）：
+
+```bash
+git config --local user.email "<用户ID>+<用户名>@users.noreply.github.com"   # 只影响本仓库
 ```
