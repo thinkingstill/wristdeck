@@ -285,6 +285,7 @@ Python 3.13.12 + bleak，手表 OWW212（Android 11）。
 | 8 | **网关自己发 `hello`（`dev=ble-gateway`）** | 既满足 Bridge 的 `need_hello` 顺序要求，又能在 WS 重连后做**会话重新对齐**（手表无须重发） |
 | 9 | **`ensureServer()` 复用活着的 GATT Server** | `start()` 会被 `BridgeService.onCreate` + `onStartCommand` 连调两次，不幂等就会把广播/GATT 打架 |
 | 10 | **`onCharacteristicWriteRequest` 先 `sendResponse` 再处理** | 否则网关侧 `.withResponse` 的写一直挂着，队列卡死 |
+| 11 | **同一时刻只开一台网关（Mac / Windows 网关不并存）** | 网关是 BLE Central、手表是外设，**外设无法拒绝连接**；两台网关会让手表的 `BleTransport.central` 单值字段被反复覆盖 ⇒ 上行通知**串流**到错误的一方。详见 §7.1 |
 
 ---
 
@@ -298,6 +299,46 @@ Python 3.13.12 + bleak，手表 OWW212（Android 11）。
 | **Mac 网关常驻** | 需要用户保持 app 运行 | ⚠️ 登录项自启**仍未做**；目前靠手动 `./build.sh run` / `open -n` |
 | **断连后的用户体验** | BLE 断开时应给出可感知反馈 | ✅ 复用现有 `Feedback`（震动）+ 状态条；实测网关侧重扫、手表侧自动重连都能收敛 |
 | **手表与手机配对是否干扰** | 手表同时与手机保持 BR/EDR 配对 + 对 Mac 做 BLE 广播 | ✅ 实测不冲突，持续观察 |
+
+### 7.1 双网关并存：为什么"选择"轮不到手表，最终结论是物理隔离（2026-10-02）
+
+**背景**：Mac 网关（`gateway/`）与 Windows 网关（`gateway-win/`）各写了一份。自然的问题 —— 同一块表在附近时，能不能"**在表上选走哪个网关**"？以及在网关侧选？
+
+**结论：BLE 模式下手表不能选；两台网关并发会串流。所有依据均为读源码 / 实测所得，非推断。**
+
+**① 手表在架构上就没有"选择权"（角色方向决定，不是没实现）**
+- 手表是 GATT **Peripheral（外设）**、网关是 **Central（中心）**（`net/BleTransport.kt` 顶部注释；当初这么定是为绕开 targetSdk 30「做 Central 要定位权限」的死穴）。
+- 传输抽象里压根没有"目标"概念：`net/Transport.kt` 的 `updateTarget()` 注释原文「Wi-Fi 用得上；**BLE 实现可以忽略（广播/连接由它自己管）**」；`ui/SettingsActivity.kt` 也写着「BLE 由 Mac 侧扫描连接，没有'目标'可填」，故 BLE 模式设置页**直接隐藏** host/port 输入区。
+- ⇒ 发起权全在网关手里，手表只负责广播；**外设没有拒绝中心连接的能力**（ATT 层允许多连接），想"只认一台"都做不到。
+
+**② 两处"单实例"假设会被并发直接打破**
+
+| 位置 | 机制 | 并发后果 |
+|---|---|---|
+| `net/BleTransport.kt` | `central: BluetoothDevice?` 是**单值字段**，`STATE_CONNECTED → central = device` | 后连的网关覆盖 `central`；`notifyCharacteristicChanged` 按它投递 ⇒ **上行串流** |
+| `bridge/server.js`（§248） | watch 会话单实例，新的顶掉旧的 | 回 `denied reason=replaced code=4006`，两网关**来回抢槽位** |
+
+**实测佐证（2026-10-02）**：Windows 网关调试期间，一个"只连接 + 订阅、不发包"的静默窗口里仍收到 2 条 `{"v":1,"t":"pong"}`（间隔约 15s）—— 同机探到 `192.168.50.56:8787` 可达，确认是**在场并行的 Mac 网关**发的 ping、手表把 pong 投到了 Windows 侧。**顺带修正一条旧认知**：文档里"一块表同一时刻只能被一个中心设备连接"**在 ATT 层并不成立**（Android GATT Server 允许多连接），真正被打破的是**应用层的收发路由**。**动手调任一台网关前，必须先停掉另一台。**
+
+**③ 根因不止"手表不会选"——两台网关谁都不肯撒手**
+
+即使给手表补上选择权也治不好，因为问题出在网关侧两条生命周期被解耦：
+- **Windows**：`win_gateway.py` 的 `_ble_cycle()` 连 BLE **完全不检查 WS 状态**（`_ws_open` 在 BLE 循环里一次都没被读）；`_ws_worker()` 收到 4006 顶替时只 `_ws_open=False` + 退避重连，**不断 BLE**。
+- **Mac**：`WristDeckLink.swift` 里唯一的 `cancelPeripheralConnection` 只服务于"机型不匹配重扫"，与网关仲裁无关。
+- ⇒ 一台网关即使已被 Bridge 顶替（不是活跃 watch 会话），**在 BLE 层仍挂着表**。两中心并存 = 串流。**这才是双网关串流的根因。**
+
+**④ 若将来真要做"网关侧选择"（本次不做，仅记录方向）**
+
+网关确实是**唯一**能做选择的地方（它是 Central，想连就连、想断就断）。落地需要三件事：
+1. **共同裁判**：两台网关分别连各自机器的 `127.0.0.1:8787`，是两个独立 Bridge、彼此看不见 ⇒ 必须让两台**指向同一个 Bridge**，复用已有的 watch 单实例 + 4006 顶替当仲裁。
+2. **被顶替方真正让位**（关键）：识别 `denied reason=replaced` → 主动 `disconnect()` BLE 且**不再重扫**、退回待机；退避**必须带随机抖动**，否则两台"我顶你、你顶我"乒乓互顶。
+3. （可选，更干净）把 BLE 连接**门控在 WS 会话之下**：只有拿到 watch 槽位才去连表。代价：链路建立慢一拍，且 Bridge 挂了就连表都够不到。
+   更稳的替代：不做"抢"，改**静态角色 `primary / standby`** —— standby 轮询共享 Bridge 的 `/api/status`，槽空才顶上；不改协议、不改手表。
+
+**⑤ 硬约束**：Windows **无法强制断开 BLE**（bleak #1949）。"让位"只能是**败方自己主动走**，系统没法替你把赖着不走的网关踢掉。
+
+**本次决定（2026-10-02，方案 C）：物理隔离 —— 同一时刻只开一台网关。**
+理由：`BleTransport.central` 与 Bridge 的 `state.watch` 这**两层"单实例"假设贯穿整个设计**，为"双活"去改要同时动传输层与 Bridge 的会话模型，性价比低。要换机器，**停一台、起一台**即可；上面 ④ 的方向仅备查。
 
 ---
 
