@@ -14,6 +14,10 @@ watch/build/
 watch/.gradle/
 .cxx/
 
+# Mac 网关：只提交 WristDeckLink.swift / Info.plist / build.sh，产物不进库
+gateway/WristDeckLink.app/
+gateway/*.dSYM/
+
 # ---------- 本机配置与签名（含绝对路径 / 私钥，绝不能提交）----------
 # Android 的 local.properties 里是本机 SDK 绝对路径，换机器就失效，且会暴露用户名。
 local.properties
@@ -48,4 +52,15 @@ Thumbs.db
 # 内网 IP、手表 adb 序列号、配对 PIN、内网拓扑），不适合进公开仓库；
 # 但同一目录下的回归测试是可复用的工程资产，用例外单独放行。
 .workbuddy/*
+
+# 离线测试台只提交源码与用例，编译产物（out/、*.app/）由各测试目录自己的
+# .gitignore 挡住 —— 沿用 tests/gesture/ 已有的约定，不开第二套机制。
 !.workbuddy/tests/
+
+# ---------- 仅本地留档，不进公开仓库 ----------
+# 门禁移植方案：含第三方门禁系统的 AES 回落密钥、真实接口域名与报文格式，
+# 属对他人系统的安全披露，同时含个人门禁信息。**保持忽略。**
+门禁开门-手表移植方案.md
+# 局域网流转系统：另一个独立产品的方案（其核心是采集 URL），
+# 与本项目「只处理动作名与布尔状态、不采集 URL」的公开声明硬冲突。**保持忽略。**
+局域网流转系统-方案设计.md
